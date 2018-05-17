@@ -1,0 +1,6 @@
+[submodule "GSock"]
+	path = GSock
+	url = https://github.com/kiritow/GSock
+[submodule "NaiveThreadPool"]
+	path = NaiveThreadPool
+	url = https://github.com/kiritow/NaiveThreadPool
