@@ -4,7 +4,11 @@
 #include <string>
 #include <vector>
 #include <map>
+#ifdef _WIN32
 #include <io.h> // access
+#else
+#include <unistd.h>
+#endif
 #include "GSock/gsock.h"
 #include "NaiveThreadPool/ThreadPool.h"
 using namespace std;
