@@ -4,11 +4,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#ifdef _WIN32
-#include <io.h> // access
-#else
-#include <unistd.h>
-#endif
+#include "dirop.h"
 #include "GSock/gsock.h"
 #include "NaiveThreadPool/ThreadPool.h"
 using namespace std;
@@ -317,7 +313,8 @@ private:
 
 inline bool endwith(const string& str, const string& target)
 {
-	return (str.find(target) == str.size() - target.size());
+	size_t ans = str.rfind(target);
+	return ans == str.size() - target.size();
 }
 
 #define ct(abbr,target) else if(endwith(path,abbr)) out_content_type=target
@@ -363,13 +360,54 @@ int GetFileContentType(const string& path, string& out_content_type)
 
 int request_get_handler(sock& s, const string& path, const string& version, const map<string, string>& mp)
 {
+	// Request to / could be dispatched to /index.html,/index.lua
+	if (endwith(path, "/"))
+	{
+		if (request_get_handler(s, path + "index.html", version, mp) < 0 &&
+			request_get_handler(s, path + "index.lua", version, mp) < 0)
+		{
+			// Display a list
+			string ans;
+
+			ans.append("<html><head><title>Index of " + path + "</title></head><body><h1>Index of " + path + "</h1>");
+			string real_dir = SERVER_ROOT + path;
+			printf("About to list Directory: %s\n", real_dir.c_str());
+			DirWalk w(real_dir);
+			string filename;
+			int is_dir;
+			while (w.next(filename, is_dir) > 0)
+			{
+				ans.append("<p><a href='" + filename);
+				if (is_dir)
+				{
+					ans.append("/");
+				}
+				ans.append("'>" + filename + "</a>");
+				if (is_dir)
+				{
+					ans.append(" [dir]");
+				}
+				ans.append("</p>");
+			}
+			ans.append("</body></html>");
+
+			Response r;
+			r.set_code(200);
+			r.setContent(ans);
+			r.send_with(s);
+			return 0;
+		}
+		else
+		{
+			return 0;
+		}
+	}
+
 	int request_type = get_request_type(path);
 	if (request_type < 0)
 	{
-		Response r;
-		r.set_code(404);
-		r.send_with(s);
-		return 0;
+		// Invalid request
+		return -1;
 	}
 
 	if (request_type == 0)
