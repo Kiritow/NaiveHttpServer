@@ -238,14 +238,26 @@ public:
 		case 200:
 			header.append("200 OK");
 			break;
+		case 400:
+			header.append("400 Bad Request");
+			break;
+		case 403:
+			header.append("403 Forbidden");
+			break;
 		case 404:
 			header.append("404 Not Found");
+			break;
+		case 405:
+			header.append("405 Method Not Allowed");
 			break;
 		case 500:
 			header.append("500 Internal Server Error");
 			break;
 		case 501:
 			header.append("501 Not Implemented");
+			break;
+		case 503:
+			header.append("503 Service Unavailable");
 			break;
 		}
 		header.append("\r\n");
@@ -359,6 +371,7 @@ int request_get_handler(sock& s, const string& path, const string& version, cons
 		r.send_with(s);
 		return 0;
 	}
+
 	if (request_type == 0)
 	{
 		// Static Target
@@ -392,6 +405,45 @@ int request_get_handler(sock& s, const string& path, const string& version, cons
 		r.send_with(s);
 		return 0;
 	}
+}
+
+int request_post_handler(sock& s, const string& path, const string& version, const map<string, string>& mp)
+{
+	int request_type = get_request_type(path);
+	if (request_type < 0)
+	{
+		Response r;
+		r.set_code(404);
+		r.send_with(s);
+		return 0;
+	}
+	
+	if (request_type == 0)
+	{
+		// Static Target
+		// POST on static target is not allowed.
+		Response r;
+		r.set_code(405);
+		r.send_with(s);
+		return 0;
+	}
+	else
+	{
+		// Dynamic Target
+		// Currently not supported.
+		Response r;
+		r.set_code(501);
+		r.send_with(s);
+		return 0;
+	}
+}
+
+int request_unknown_handler(sock& s, const string& path, const string& version, const map<string, string>& mp)
+{
+	Response r;
+	r.set_code(501);
+	r.send_with(s);
+	return 0;
 }
 
 int request_handler(sock& s)
@@ -430,11 +482,30 @@ int request_handler(sock& s)
 			return -3;
 		}
 	}
+	else if (method == "POST")
+	{
+		if (request_post_handler(s, path, version, mp) < 0)
+		{
+			return -4;
+		}
+	}
+	else
+	{
+		if (request_unknown_handler(s, path, version, mp) < 0)
+		{
+			return -5;
+		}
+	}
 	
 	return 0;
 }
 
-
+void bad_request_handler(sock& s)
+{
+	Response r;
+	r.set_code(400);
+	r.send_with(s);
+}
 
 int main()
 {
@@ -469,6 +540,10 @@ int main()
 		if(tp.start([ps](){
 					int ret=request_handler(*ps);
 					dprintf("request handler returns %d\n",ret);
+					if (ret < 0)
+					{
+						bad_request_handler(*ps);
+					}
 					delete ps;
 				})<0)
 		{
