@@ -303,10 +303,51 @@ private:
 	string data;
 };
 
-void response_end(string& response)
+inline bool endwith(const string& str, const string& target)
 {
-	response.append("\r\n");
+	return (str.find(target) == str.size() - target.size());
 }
+
+#define ct(abbr,target) else if(endwith(path,abbr)) out_content_type=target
+
+int GetFileContentType(const string& path, string& out_content_type)
+{
+	if (endwith(path, ".html"))
+	{
+		out_content_type = "text/html";
+	}
+	ct(".bmp", "application/x-bmp");
+	ct(".doc", "application/msword");
+	ct(".ico", "image/x-icon");
+	ct(".java", "java/*");
+	ct(".class", "java/*");
+	ct(".jpeg", "image/jpeg");
+	ct(".jpg", "image/jpeg");
+	ct(".png", "image/png");
+	ct(".swf", "application/x-shockwave-flash");
+	ct(".xhtml", "text/html");
+	ct(".apk", "application/vnd.android.package-archive");
+	ct(".exe", "application/x-msdownload");
+	ct(".htm", "text/html");
+	ct(".js", "application/x-javascript");
+	ct(".mp3", "audio/mp3");
+	ct(".mp4", "video/mpeg4");
+	ct(".mpg", "video/mpg");
+	ct(".pdf", "application/pdf");
+	ct(".rmvb", "application/vnd.rn-realmedia-vbr");
+	ct(".torrent", "application/x-bittorrent");
+	ct(".txt", "text/plain");
+	else
+	{
+		/// Not Support Content Type
+		return -1;
+	}
+
+	/// Supported ContentType
+	return 0;
+}
+
+#undef ct
 
 int request_get_handler(sock& s, const string& path, const string& version, const map<string, string>& mp)
 {
@@ -335,7 +376,9 @@ int request_get_handler(sock& s, const string& path, const string& version, cons
 		{
 			Response r;
 			r.set_code(200);
-			r.setContent(content);
+			string content_type;
+			if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
+			r.setContent(content, content_type);
 			r.send_with(s);
 			return 0;
 		}
