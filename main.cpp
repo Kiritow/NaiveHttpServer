@@ -393,6 +393,10 @@ int main()
 {
 	dprintf("NaiveHTTPServer Started.\n");
 	serversock t;
+	if (t.set_reuse() < 0)
+	{
+		dprintf("Failed to set reuse flag. This is not an error.\n");
+	}
 	if(t.bind(BIND_PORT)<0)
 	{
 		dprintf("Failed to bind at port %d\n",BIND_PORT);
