@@ -36,22 +36,26 @@ def ScanSource(dirname):
                 lst.append(os.path.join(par,f))
     return lst
 
+def RemoveFileES(filename):
+    # ES: Exception-Safe
+    try:
+        os.remove(filename)
+    except:
+        print('Failed to remove '+filename)
+
 def CleanObject(source_list):
+    print('Removing main...')
+    RemoveFileES('main')
+    
     for f in source_list:
         if(f.endswith('.c')):
             t=f.replace('.c','.o')
             print('Removing '+t+'...')
-            try:
-                os.remove(t)
-            except:
-                print('Failed to delete '+t)
+            RemoveFileES(t)
         elif(f.endswith('.cpp')):
             t=f.replace('.cpp','.o')
             print('Removing '+t+'...')
-            try:
-                os.remove(t)
-            except:
-                print('Failed to remove '+t)
+            RemoveFileES(t)
 slst=ScanSource('.')
 if(len(argv)>1 and argv[1]=='clean'):
     CleanObject(slst)
