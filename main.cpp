@@ -242,6 +242,7 @@ public:
 			break;
 		case 404:
 			header.append("404 Not Found");
+            setContent("<html><head><title>404 Not Found</title></head><body><h1>404 Not Found</h1>The request is not found on this server.</body></html>");
 			break;
 		case 405:
 			header.append("405 Method Not Allowed");
@@ -517,21 +518,21 @@ int request_handler(sock& s)
 	{
 		if (request_get_handler(s, path, version, mp) < 0)
 		{
-			return -3;
+			return 1;
 		}
 	}
 	else if (method == "POST")
 	{
 		if (request_post_handler(s, path, version, mp) < 0)
 		{
-			return -4;
+			return 2;
 		}
 	}
 	else
 	{
 		if (request_unknown_handler(s, path, version, mp) < 0)
 		{
-			return -5;
+			return 3;
 		}
 	}
 	
@@ -582,6 +583,13 @@ int main()
 					{
 						bad_request_handler(*ps);
 					}
+                    else if(ret>0)
+                    {
+                        // 404 if ret>0
+                        Response r;
+                        r.set_code(404);
+                        r.send_with(*ps);
+                    }
 					delete ps;
 				})<0)
 		{
