@@ -1,0 +1,7 @@
+*.o
+*.sln
+*.vcproj
+*.cbp
+*.depend
+*.layout
+
