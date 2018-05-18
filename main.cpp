@@ -222,6 +222,11 @@ int GetFileContent(const string& request_path, string& out_content)
 	return 0;
 }
 
+string default_header(const string& header,const string& info)
+{
+        return string("<html><head><title>")+header+"</title></head><body><h1>"+header+"</h1>"+info+"</body></html>";
+}
+
 class Response
 {
 public:
@@ -246,15 +251,19 @@ public:
 			break;
 		case 405:
 			header.append("405 Method Not Allowed");
+            setContent(default_header(header,"The method is not allowed."));
 			break;
 		case 500:
 			header.append("500 Internal Server Error");
+            setContent(default_header(header,"Server has encoutered an internal error while processing your request."));
 			break;
 		case 501:
 			header.append("501 Not Implemented");
+            setContent(default_header(header,"The method is not implemented."));
 			break;
 		case 503:
 			header.append("503 Service Unavailable");
+            setContent(default_header(header,"Service is not available for now. Please try later."));
 			break;
 		}
 		header.append("\r\n");
