@@ -10,7 +10,7 @@ def BuildIfN(filename):
         object_name=filename.replace('.c','.o')
 
     if((not os.path.exists(object_name)) or (os.stat(filename).st_mtime>os.stat(object_name).st_mtime) ):
-        build_cmd='g++ -std=c++14 -c '+filename+' -o '+object_name
+        build_cmd='g++ -std=c++14 -fPIC -c '+filename+' -o '+object_name
         print(build_cmd)
         if(os.system(build_cmd)!=0):
             raise Exception('Failed to build '+filename,filename,object_name)
@@ -24,7 +24,7 @@ def BuildAll(lst):
     cmd='g++ '
     for s in klst:
         cmd=cmd+s+' '
-    cmd=cmd+' -ldl -lpthread -o main'
+    cmd=cmd+' -fPIC -ldl -lpthread -o main'
     print(cmd)
     os.system(cmd)
 
