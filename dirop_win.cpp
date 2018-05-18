@@ -1,3 +1,4 @@
+#ifdef _WIN32
 #include "dirop.h"
 using namespace std;
 
@@ -75,3 +76,4 @@ int DirWalk::next(string& filename,int& is_dir)
 	printf("DirOP: %s %d\n", filename.c_str(), is_dir);
 	return 1; // If filename and is_dir is set correctly, return 1.
 }
+#endif // End of ifdef _WIN32

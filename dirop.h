@@ -16,8 +16,6 @@ public:
 	void walk(const std::string& dirname);
 	int next(std::string& filename,int& is_dir);
 private:
-	_finddata_t _f;
-	intptr_t _handle;
-	std::string _dirname;
-	int _status;
+    struct _impl;
+    _impl* _p;
 };
