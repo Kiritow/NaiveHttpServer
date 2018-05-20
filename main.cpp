@@ -7,6 +7,13 @@
 #include "dirop.h"
 #include "GSock/gsock.h"
 #include "NaiveThreadPool/ThreadPool.h"
+
+#ifdef _WIN32
+#include <io.h> // access
+#else
+#include <unistd.h>
+#endif
+
 using namespace std;
 
 #ifdef HCDEBUG

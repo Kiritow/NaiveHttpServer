@@ -1,10 +1,5 @@
 #pragma once
 #include <string>
-#ifdef _WIN32
-#include <io.h> // access
-#else
-#include <unistd.h>
-#endif
 
 class DirWalk
 {

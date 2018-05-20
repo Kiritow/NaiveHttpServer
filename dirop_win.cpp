@@ -1,10 +1,18 @@
 #ifdef _WIN32
 #include "dirop.h"
+#include "io.h"
 using namespace std;
 
-DirWalk::DirWalk()
+struct DirWalk::_impl
 {
-	_status = 0;
+	int _status;
+	string _dirname;
+	int _handle;
+};
+
+DirWalk::DirWalk() : _p(new _impl)
+{
+	_p->_status = 0;
 }
 
 DirWalk::DirWalk(const string& dirname) : DirWalk()
@@ -19,32 +27,33 @@ DirWalk::~DirWalk()
 
 void DirWalk::walk(const string& dirname)
 {
-	_dirname = dirname;
-	_dirname.append("*.*");
-	if (_status == 1)
+	_p->_dirname = dirname;
+	_p->_dirname.append("*.*");
+	if (_p->_status == 1)
 	{
-		_findclose(_handle);
-		_status = 0;
+		_findclose(_p->_handle);
+		_p->_status = 0;
 	}
 }
 
 int DirWalk::next(string& filename,int& is_dir)
 {
-	if (_status == 0) /// Not started
+	_finddata_t _f;
+	if (_p->_status == 0) /// Not started
 	{
-		_handle = _findfirst(_dirname.c_str(), &_f);
-		if (_handle < 0)
+		_p->_handle = _findfirst(_p->_dirname.c_str(), &_f);
+		if (_p->_handle < 0)
 		{
 			return -1; /// Error
 		}
-		_status = 1;
+		_p->_status = 1;
 	}
-	else if (_status == 1) // Looping
+	else if (_p->_status == 1) // Looping
 	{
-		if (_findnext(_handle, &_f) < 0)
+		if (_findnext(_p->_handle, &_f) < 0)
 		{
-			_findclose(_handle);
-			_status = 2; // switch to 2 to stop infinite loop.
+			_findclose(_p->_handle);
+			_p->_status = 2; // switch to 2 to stop infinite loop.
 			return 0;
 		}
 	}
