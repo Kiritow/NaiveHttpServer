@@ -4,7 +4,7 @@
 #define SERVER_ROOT std::string(".")
 
 #ifdef HCDEBUG
-#define dprintf(fmt,...) printf(fmt,__VA_ARGS__)
+#define dprintf(fmt,...) printf(fmt,##__VA_ARGS__)
 #else
 #define dprintf(fmt,...)
 #endif
