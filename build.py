@@ -14,7 +14,7 @@ def BuildIfN(filename,compile_option):
         compiler='gcc'
 
     if((not os.path.exists(object_name)) or (os.stat(filename).st_mtime>os.stat(object_name).st_mtime) ):
-        build_cmd=compiler+' -fPIC -fPIE '+compile_option+' -c '+filename+' -o '+object_name
+        build_cmd=compiler+' -fPIC '+compile_option+' -c '+filename+' -o '+object_name
         print(build_cmd)
         if(os.system(build_cmd)!=0):
             raise Exception('Failed to build '+filename,filename,object_name)
@@ -28,7 +28,7 @@ def BuildAll(lst,compile_option='',link_option=''):
     cmd='g++ '
     for s in klst:
         cmd=cmd+s+' '
-    cmd=cmd+' -fPIC -fPIE -ldl -lpthread '+link_option+'-o main'
+    cmd=cmd+' -fPIC -ldl -lpthread '+link_option+'-o main'
     print(cmd)
     os.system(cmd)
 
