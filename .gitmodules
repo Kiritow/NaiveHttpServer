@@ -4,3 +4,6 @@
 [submodule "NaiveThreadPool"]
 	path = NaiveThreadPool
 	url = https://github.com/kiritow/NaiveThreadPool
+[submodule "LuaSrc"]
+	path = LuaSrc
+	url = https://github.com/Kiritow/LuaSrc
