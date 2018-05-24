@@ -1,4 +1,5 @@
 #include "vmop.h"
+#include "log.h"
 using namespace std;
 
 VM::VM()
@@ -20,7 +21,7 @@ int VM::runCodeEx(const function<void(lua_State*)>& prepare,
 {
 	bool err = luaL_loadbuffer(_luavm, LuaSource.c_str(), (int)LuaSource.size(), "LuaVM") || lua_pcall(_luavm, 0, 0, 0);
 	if (err) {
-		printf("%s\n", lua_tostring(_luavm, -1));
+		loge("LuaVM Error: %s\n", lua_tostring(_luavm, -1));
 		lua_pop(_luavm, 1);
 		return -1;
 	}

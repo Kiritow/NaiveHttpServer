@@ -12,6 +12,7 @@
 #include "request.h"
 #include "response.h"
 #include "util.h"
+#include "log.h"
 
 using namespace std;
 
@@ -98,6 +99,8 @@ int GetFileContentType(const string& path, string& out_content_type)
 
 int request_get_dynamic_handler(sock& s, const string& path_decoded, const string& version, const map<string, string>& mp)
 {
+	logd("Loading lua file: %s\n", path_decoded.c_str());
+
 	string lua_code;
 	int ret = GetFileContent(path_decoded, lua_code);
 	if (ret < 0)
@@ -117,14 +120,18 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 	VM v;
 	if (v.runCode(predefine) < 0)
 	{
-		printf("%s: Failed to run predefine code.\n%s\n", __func__, predefine.c_str());
+		loge("%s: Failed to run predefine code.\n%s\n", __func__, predefine.c_str());
 		return -1;
 	}
 
+	logd("Executing lua file: %s\n", path_decoded.c_str());
 	if (v.runCode(lua_code) < 0)
 	{
-		printf("%s: Failed to run user lua code.\n", __func__);
+		loge("%s: Failed to run user lua code.\n", __func__);
+		return -2;
 	}
+
+	logd("Execution finished successfully.\n");
 
 	// TODO
 	Response r;
@@ -139,7 +146,7 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 	string path;
 	if (urldecode(in_path, path) < 0)
 	{
-		printf("Failed to decode url : %s\n", in_path.c_str());
+		loge("Failed to decode url : %s\n", in_path.c_str());
 		return -1;
 	}
 
@@ -154,7 +161,7 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 
 			ans.append("<html><head><title>Index of " + path + "</title></head><body><h1>Index of " + path + "</h1>");
 			string real_dir = SERVER_ROOT + path;
-			printf("About to list Directory: %s\n", real_dir.c_str());
+			logd("About to list Directory: %s\n", real_dir.c_str());
 			DirWalk w(real_dir);
 			string filename;
 			int is_dir;
@@ -275,16 +282,16 @@ int request_unknown_handler(sock& s, const string& path, const string& version, 
 
 int request_handler(sock& s)
 {
-	printf("RequestHandler sock(%p): Started\n", &s);
+	logd("RequestHandler sock(%p): Started\n", &s);
 	string peer_ip;
 	int peer_port;
 	if (s.getpeer(peer_ip, peer_port) < 0)
 	{
-		printf("RequestHandler sock(%p): Failed to get peer info. This is not an error.\n",&s);
+		logd("RequestHandler sock(%p): Failed to get peer info. This is not an error.\n",&s);
 	}
 	else
 	{
-		printf("RequestHandler sock(%p): Connected From %s:%d\n", &s, peer_ip.c_str(), peer_port);
+		logd("RequestHandler sock(%p): Connected From %s:%d\n", &s, peer_ip.c_str(), peer_port);
 	}
 
 	string header_raw;
@@ -293,25 +300,25 @@ int request_handler(sock& s)
 	{
 		return -1;
 	}
-	printf("RequestHandler sock(%p): Header Received.\n", &s);
+	logd("RequestHandler sock(%p): Header Received.\n", &s);
 	string method;
 	string path;
 	string version;
 	map<string, string> mp;
 	ret = parse_header(header_raw, method, path, version, mp);
-	printf("RequestHandler sock(%p): Header Parse Finished.\n", &s);
+	logd("RequestHandler sock(%p): Header Parse Finished.\n", &s);
 	if (ret < 0)
 	{
 		return -2;
 	}
 
-	printf("==========sock(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &s, method.c_str(), path.c_str(), version.c_str());
+	logx(4,"==========sock(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &s, method.c_str(), path.c_str(), version.c_str());
 	for (auto& pr : mp)
 	{
-		printf("%s\t %s\n", pr.first.c_str(), pr.second.c_str());
+		logx(4,"%s\t %s\n", pr.first.c_str(), pr.second.c_str());
 	}
-	printf("^^^^^^^^^^sock(%p)^^^^^^^^^^\n", &s);
-	printf("RequestHandler sock(%p): Finished Successfully.\n", &s);
+	logx(4,"^^^^^^^^^^sock(%p)^^^^^^^^^^\n", &s);
+	logd("RequestHandler sock(%p): Finished Successfully.\n", &s);
 
 	if (method == "GET")
 	{
@@ -358,37 +365,38 @@ void testMain()
 
 int main()
 {
-	dprintf("NaiveHTTPServer Started.\n");
+	logi("NaiveHTTPServer Started.\n");
 	serversock t;
 	if (t.set_reuse() < 0)
 	{
-		dprintf("Failed to set reuse flag. This is not an error.\n");
+		logw("Failed to set reuse flag. This is not an error.\n");
 	}
 	if(t.bind(BIND_PORT)<0)
 	{
-		dprintf("Failed to bind at port %d\n",BIND_PORT);
+		loge("Failed to bind at port %d\n",BIND_PORT);
 		return 0;
 	}
 	if(t.listen(10)<0)
 	{
-		dprintf("Failed to listen at port %d\n",BIND_PORT);
+		loge("Failed to listen at port %d\n",BIND_PORT);
+		return 0;
 	}
-	dprintf("Server started at port %d\n",BIND_PORT);
-	dprintf("Starting thread pool...\n");
+	logi("Server started at port %d\n",BIND_PORT);
+	logi("Starting thread pool...\n");
 	ThreadPool tp(10);
-	dprintf("Server is now ready for connections.\n");
+	logi("Server is now ready for connections.\n");
 	while(true)
 	{
 		sock* ps=new sock;
 		int ret=t.accept(*ps);
 		if(ret<0)
 		{
-			dprintf("Failed to accept connection. Abort.\n");
+			loge("Failed to accept connection. Abort.\n");
 			break;
 		}
 		if(tp.start([ps](){
 					int ret=request_handler(*ps);
-					dprintf("request handler returns %d\n",ret);
+					logd("request handler returns %d\n",ret);
 					if (ret < 0)
 					{
 						bad_request_handler(*ps);
@@ -403,14 +411,14 @@ int main()
 					delete ps;
 				})<0)
 		{
-			dprintf("Failed to start job at thread pool.\n");
+			logw("Failed to start job at thread pool.\n");
 		}
 		else
 		{
-			dprintf("Job started with sock: %p\n",ps);
+			logd("Job started with sock: %p\n",ps);
 		}
 	}
-	dprintf("Server closed.\n");
+	logi("Server closed.\n");
 
 	return 0;
 }

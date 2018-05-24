@@ -1,6 +1,6 @@
 #include "response.h"
 #include "util.h"
-
+#include "log.h"
 using namespace std;
 
 static string default_header(const string& header, const string& info)
@@ -90,6 +90,6 @@ int Response::send_with(sock & s)
 	/// Server does not support keep-alive connection.
 	set_raw("Connection", "close");
 	string t = toString();
-	printf("%s\n", t.c_str());
+	logd("%s\n", t.c_str());
 	return sendn(s, t);
 }

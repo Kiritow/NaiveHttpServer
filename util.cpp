@@ -1,4 +1,5 @@
 #include "util.h"
+#include "log.h"
 using namespace std;
 
 int sendn(sock& s, const std::string& in_data)
@@ -79,7 +80,7 @@ static inline int getHexValue(char c)
 	}
 	else
 	{
-		printf("[getHexValue]: Failed to get hex value from char: %c\n", c);
+		logw("[getHexValue]: Failed to get hex value from char: %c\n", c);
 		return -1;
 	}
 }
