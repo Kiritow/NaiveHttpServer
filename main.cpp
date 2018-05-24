@@ -115,6 +115,9 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 	{
 		predefine.append("request['"s + pr.first + "']='" + pr.second+"'\n");
 	}
+
+	// Lua CGI program should fill the response table.
+	// response.output will be outputed as content.
 	predefine.append("response={}\n");
 
 	VM v;
@@ -133,10 +136,30 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 
 	logd("Execution finished successfully.\n");
 
-	// TODO
-	Response r;
-	r.set_code(200);
-	r.send_with(s);
+	// FIXME: Exception may occur here.
+	Response ur;
+	auto L = v.get();
+	lua_getglobal(L, "response");
+	lua_pushnil(L);
+	while (lua_next(L, -2))
+	{
+		if (strcmp(lua_typename(L, lua_type(L, -2)), "string") == 0)  // type(key)=="string"
+		{
+			if (strcmp(lua_tostring(L, -2), "output") != 0)
+			{
+				// FIXME: if stack[-1] cannot be converted to string, this may cause critical error!
+				ur.set_raw(lua_tostring(L, -2), lua_tostring(L, -1));
+			}
+			else
+			{
+				ur.setContentRaw(lua_tostring(L, -1));
+			}
+		}
+		lua_pop(L, 1);
+	}
+	ur.set_code(200);
+	ur.send_with(s);
+
 	return 0;
 }
 

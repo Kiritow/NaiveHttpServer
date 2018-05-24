@@ -19,6 +19,10 @@ public:
 		const std::string& LuaSource);
 
 	int runCode(const std::string& LuaSource);
+
+	// ONLY For Experimental Use.
+	// This method should be removed in future.
+	lua_State* get();
 private:
 	lua_State * _luavm;
 };

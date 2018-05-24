@@ -1,3 +1,5 @@
+#include <ctime>
+
 #include "response.h"
 #include "util.h"
 #include "log.h"
@@ -62,11 +64,16 @@ void Response::setContentType(const string & content_type)
 	set_raw("Content-Type", content_type);
 }
 
-void Response::setContent(const string & content, const string & content_type)
+void Response::setContentRaw(const string& content)
 {
 	setContentLength(content.size());
-	setContentType(content_type);
 	data = content;
+}
+
+void Response::setContent(const string & content, const string & content_type)
+{
+	setContentRaw(content);
+	setContentType(content_type);
 }
 
 string Response::toString()
@@ -85,10 +92,53 @@ string Response::toString()
 	return ans;
 }
 
+// Use struct tm::tm_wday for weekday value.
+static const char* GetWeekAbbr(int weekday)
+{
+	static const char* w[7]{
+		"Sun",
+		"Mon","Tue","Wed","Thu","Fri",
+		"Sat"
+	};
+	if (weekday < 0 || weekday>6) return "XXX";
+	else return w[weekday];
+}
+
+static const char* GetMonthAbbr(int month)
+{
+	static const char* m[12]{
+		"Jan","Feb","Mar","Apr","May",
+		"Jun","Jul","Aug","Sep","Oct",
+		"Nov","Dec"
+	};
+	if (month < 1 || month>12) return "XXX";
+	else return m[month - 1];
+}
+
+// Fri, 09 Mar 2018 07:06:13 GMT
+static string GetCurrentDateString()
+{
+	time_t t;
+	struct tm* tt = NULL;
+	time(&t);
+	tt = localtime(&t);
+	
+	char buff[128] = { 0 };
+	sprintf(buff, "%s, %02d %s %04d %02d:%02d:%02d GMT",
+		GetWeekAbbr(tt->tm_wday),
+		tt->tm_mday, GetMonthAbbr(tt->tm_mon + 1), tt->tm_year + 1900,
+		tt->tm_hour, tt->tm_min, tt->tm_sec);
+
+	return buff;
+}
+
 int Response::send_with(sock & s)
 {
 	/// Server does not support keep-alive connection.
 	set_raw("Connection", "close");
+	set_raw("Server", "NaiveHTTPServer by Kiritow");
+	set_raw("Date", GetCurrentDateString());
+
 	string t = toString();
 	logd("%s\n", t.c_str());
 	return sendn(s, t);

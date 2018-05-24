@@ -15,6 +15,11 @@ VM::~VM()
 	lua_close(_luavm);
 }
 
+lua_State* VM::get()
+{
+	return _luavm;
+}
+
 int VM::runCodeEx(const function<void(lua_State*)>& prepare,
 	const function<void(lua_State*)>& after,
 	const string& LuaSource)

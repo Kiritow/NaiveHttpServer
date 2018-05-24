@@ -17,6 +17,9 @@ public:
 
 	void setContent(const std::string& content, const std::string& content_type = "text/html");
 
+	// This function only set content and content length. Content type will not be set.
+	void setContentRaw(const std::string& content);
+
 	std::string toString();
 
 	int send_with(sock& s);
