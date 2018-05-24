@@ -96,8 +96,16 @@ int GetFileContentType(const string& path, string& out_content_type)
 
 #undef ct
 
-int request_get_handler(sock& s, const string& path, const string& version, const map<string, string>& mp)
+int request_get_handler(sock& s, const string& in_path, const string& version, const map<string, string>& mp)
 {
+	// URL Decode first
+	string path;
+	if (urldecode(in_path, path) < 0)
+	{
+		printf("Failed to decode url : %s\n", in_path.c_str());
+		return -1;
+	}
+
 	// Request to / could be dispatched to /index.html,/index.lua
 	if (endwith(path, "/"))
 	{
@@ -115,7 +123,10 @@ int request_get_handler(sock& s, const string& path, const string& version, cons
 			int is_dir;
 			while (w.next(filename, is_dir) > 0)
 			{
-				ans.append("<p><a href='" + filename);
+				string realname;
+				urlencode(filename, realname);
+
+				ans.append("<p><a href='" + realname);
 				if (is_dir)
 				{
 					ans.append("/");
@@ -281,6 +292,17 @@ void bad_request_handler(sock& s)
 	Response r;
 	r.set_code(400);
 	r.send_with(s);
+}
+
+void testMain()
+{
+	VM v;
+	v.runCode("print('Hello World')");
+	v.runCode("response['content_type']='text/html'");
+
+	v.runCode("print(response.content_type)");
+
+	exit(0);
 }
 
 int main()
