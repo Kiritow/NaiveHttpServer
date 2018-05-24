@@ -96,6 +96,43 @@ int GetFileContentType(const string& path, string& out_content_type)
 
 #undef ct
 
+int request_get_dynamic_handler(sock& s, const string& path_decoded, const string& version, const map<string, string>& mp)
+{
+	string lua_code;
+	int ret = GetFileContent(path_decoded, lua_code);
+	if (ret < 0)
+	{
+		return -1;
+	}
+
+	string predefine;
+	predefine = "request={}\n";
+	predefine.append("request.http_version='"s + version+"'\n");
+	for (const auto& pr : mp)
+	{
+		predefine.append("request['"s + pr.first + "']='" + pr.second+"'\n");
+	}
+	predefine.append("response={}\n");
+
+	VM v;
+	if (v.runCode(predefine) < 0)
+	{
+		printf("%s: Failed to run predefine code.\n%s\n", __func__, predefine.c_str());
+		return -1;
+	}
+
+	if (v.runCode(lua_code) < 0)
+	{
+		printf("%s: Failed to run user lua code.\n", __func__);
+	}
+
+	// TODO
+	Response r;
+	r.set_code(200);
+	r.send_with(s);
+	return 0;
+}
+
 int request_get_handler(sock& s, const string& in_path, const string& version, const map<string, string>& mp)
 {
 	// URL Decode first
@@ -187,9 +224,12 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 	{
 		// Dynamic Target
 		// Currently not supported.
-		Response r;
-		r.set_code(501);
-		r.send_with(s);
+		if (request_get_dynamic_handler(s, path, version, mp) < 0)
+		{
+			Response r;
+			r.set_code(500);
+			r.send_with(s);
+		}
 		return 0;
 	}
 }
@@ -236,6 +276,17 @@ int request_unknown_handler(sock& s, const string& path, const string& version, 
 int request_handler(sock& s)
 {
 	printf("RequestHandler sock(%p): Started\n", &s);
+	string peer_ip;
+	int peer_port;
+	if (s.getpeer(peer_ip, peer_port) < 0)
+	{
+		printf("RequestHandler sock(%p): Failed to get peer info. This is not an error.\n",&s);
+	}
+	else
+	{
+		printf("RequestHandler sock(%p): Connected From %s:%d\n", &s, peer_ip.c_str(), peer_port);
+	}
+
 	string header_raw;
 	int ret=recvheader_raw(s,header_raw);
 	if(ret<0)
