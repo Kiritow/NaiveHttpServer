@@ -7,3 +7,6 @@
 [submodule "LuaSrc"]
 	path = LuaSrc
 	url = https://github.com/Kiritow/LuaSrc
+[submodule "Logger"]
+	path = Logger
+	url = https://github.com/Kiritow/Logger
