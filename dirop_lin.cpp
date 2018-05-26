@@ -1,6 +1,8 @@
 #ifndef _WIN32 // Linux 
 #include "dirop.h"
 #include <dirent.h>
+#include <cstring>
+#include "log.h"
 using namespace std;
 
 struct DirWalk::_impl
@@ -29,7 +31,8 @@ DirWalk::~DirWalk()
 
 void DirWalk::walk(const string& path)
 {
-        _p->dir=opendir(path.c_str());
+	_p->dir=opendir(path.c_str());
+	logd("Walking Path: %s, %p\n",path.c_str(),_p->dir);
 }
 
 int DirWalk::next(string& filename,int& is_dir)
@@ -48,12 +51,16 @@ int DirWalk::next(string& filename,int& is_dir)
                 }
                 filename=file->d_name;
                 is_dir=1;
+
+		logd("NextDir: %s\n",filename.c_str());
                 return 1;
         }
         else
         {
                 filename=file->d_name;
                 is_dir=0;
+
+		logd("NextFile: %s\n",filename.c_str());
                 return 1;
         }
 }

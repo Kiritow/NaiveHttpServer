@@ -186,6 +186,7 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 			string real_dir = SERVER_ROOT + path;
 			logd("About to list Directory: %s\n", real_dir.c_str());
 			DirWalk w(real_dir);
+			logd("DirWalk Created.\n");
 			string filename;
 			int is_dir;
 			while (w.next(filename, is_dir) > 0)
