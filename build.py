@@ -16,6 +16,8 @@ def GetMD5(filename):
     return h.hexdigest()
 
 def IsNewSource(filename):
+    global _source_lst
+
     check_code=GetMD5(filename)
     if(check_code in _source_lst):
         return False,check_code
@@ -23,6 +25,8 @@ def IsNewSource(filename):
         return True,check_code
 
 def AddNewSource(filename):
+    global _source_lst
+
     flg,check_code=IsNewSource(filename)
     if(flg):
         _source_list.append(check_code)
