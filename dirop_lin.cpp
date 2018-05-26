@@ -15,7 +15,7 @@ DirWalk::DirWalk() : _p(new _impl)
         _p->dir=NULL;
 }
 
-DirWalk::DirWalk(const string& path)
+DirWalk::DirWalk(const string& path) : DirWalk()
 {
         walk(path);
 }
