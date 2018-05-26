@@ -1,9 +1,42 @@
 import os
+from hashlib import md5
 from sys import argv
 
-def BuildIfN(filename,compile_option):
+_source_lst=[]
+
+def GetMD5(filename):
+    f=open(filename,'rb')
+    h=md5()
+    while True:
+        b=f.read(4096)
+        if not b:
+            break
+        h.update(b)
+    f.close()
+    return h.hexdigest()
+
+def IsNewSource(filename):
+    check_code=GetMD5(filename)
+    if(check_code in _source_lst):
+        return False,check_code
+    else:
+        return True,check_code
+
+def AddNewSource(filename):
+    flg,check_code=IsNewSource(filename)
+    if(flg):
+        _source_list.append(check_code)
+        return True
+    else:
+        return False
+
+def BuildSingle(filename,compile_option):
     print('Considering '+filename+'...')
     object_name=''
+
+    if(not AddNewSource(filename)):
+        print('Source has been compiled before. '+filename)
+        return False,object_name
 
     compiler='g++ -std=c++14'
 
@@ -19,12 +52,14 @@ def BuildIfN(filename,compile_option):
         if(os.system(build_cmd)!=0):
             raise Exception('Failed to build '+filename,filename,object_name)
 
-    return object_name
+    return True,object_name
 
 def BuildAll(lst,compile_option='',link_option=''):
     klst=[]
     for s in lst:
-        klst.append(BuildIfN(s,compile_option))
+        flg,objname=BuildSingle(s,compile_option)
+        if(flg):
+            klst.append(objname)
     cmd='g++ '
     for s in klst:
         cmd=cmd+s+' '
@@ -50,7 +85,6 @@ def RemoveFileES(filename):
 def CleanObject(source_list):
     print('Removing main...')
     RemoveFileES('main')
-    
     for f in source_list:
         if(f.endswith('.c')):
             t=f.replace('.c','.o')
@@ -60,6 +94,7 @@ def CleanObject(source_list):
             t=f.replace('.cpp','.o')
             print('Removing '+t+'...')
             RemoveFileES(t)
+
 slst=ScanSource('.')
 if(len(argv)>1 and argv[1]=='clean'):
     CleanObject(slst)
