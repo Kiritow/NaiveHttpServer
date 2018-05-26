@@ -29,7 +29,7 @@ def AddNewSource(filename):
 
     flg,check_code=IsNewSource(filename)
     if(flg):
-        _source_list.append(check_code)
+        _source_lst.append(check_code)
         return True
     else:
         return False
