@@ -93,7 +93,7 @@ int urlencode(const string& url_before, string& out_url_encoded)
 		if (urlCharNeedEncode(c))
 		{
 			char buff[8] = { 0 };
-			sprintf(buff, "%%%X", (int)c);
+			sprintf(buff, "%%%02X", (unsigned char)c);
 			ans.append(buff);
 		}
 		else
