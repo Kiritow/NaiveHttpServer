@@ -108,54 +108,67 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 		return -1;
 	}
 
-	string predefine;
-	predefine = "request={}\n";
-	predefine.append("request.http_version='"s + version+"'\n");
+	VM v;
+	auto L = v.get();
+	lua_newtable(L);
+	lua_pushstring(L, version.c_str());
+	lua_setfield(L, 1, "http_version"); // request["http_version"]=...
+
 	for (const auto& pr : mp)
 	{
-		predefine.append("request['"s + pr.first + "']='" + pr.second+"'\n");
+		lua_pushstring(L, pr.second.c_str());
+		lua_setfield(L, 1, pr.first.c_str()); // request[...]=...
 	}
+
+	lua_setglobal(L, "request");
 
 	// Lua CGI program should fill the response table.
 	// response.output will be outputed as content.
-	predefine.append("response={}\n");
+	lua_newtable(L);
+	lua_setglobal(L, "response");
 
-	VM v;
-	if (v.runCode(predefine) < 0)
+	logd("Preparing helper...\n");
+
+	if (v.runCode("helper={} helper.print=function(...) local t=table.pack(...) "s +
+		"for i,v in ipairs(t) do " +
+		"if(#(response.output)>0) then response.output=response.output..'\t' end " +
+		"response.output = response.output .. tostring(v) " +
+		"end end ") < 0)
 	{
-		loge("%s: Failed to run predefine code.\n%s\n", __func__, predefine.c_str());
-		return -1;
+		loge("Failed to prepare helper.\n");
+		return -2;
 	}
 
 	logd("Executing lua file: %s\n", path_decoded.c_str());
 	if (v.runCode(lua_code) < 0)
 	{
-		loge("%s: Failed to run user lua code.\n", __func__);
-		return -2;
+		loge("Failed to run user lua code.\n");
+		return -3;
 	}
 
 	logd("Execution finished successfully.\n");
 
-	auto L = v.get();
 	Response ur;
 	v.getglobal("response");
-	if (lua_type(L, -1)!=LUA_TTABLE) // type(response)=="table"
+	
+	if (!lua_istable(L, -1)) // type(response)~="table"
 	{
-		return -3;
+		logd("LuaVM: variable 'response' is not a table.\n");
+		return -4;
 	}
 
 	v.pushnil();
 	
 	while (lua_next(L, -2))
 	{
-		if (lua_type(L, -2)==LUA_TSTRING)  // type(key)=="string"
+		if (lua_isstring(L,-2))  // type(key)=="string"
 		{
 			const char* item_name = lua_tostring(L, -2);
 			const char* item_value = lua_tostring(L, -1);
 
 			if ((!item_name) || (!item_value))
 			{
-				logd("Error in Lua Script. Skipping an item.\n");
+				logd("LuaVM: An item cannot be converted to string. Key: %s\n", item_name);
 			}
 			else
 			{
@@ -165,7 +178,7 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 				}
 				else
 				{
-					ur.setContentRaw(lua_tostring(L, -1));
+					ur.setContentRaw(item_value);
 				}
 			}			
 		}
@@ -196,7 +209,7 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 			// Display a list
 			string ans;
 
-			ans.append("<html><head><title>Index of " + path + "</title></head><body><h1>Index of " + path + "</h1>");
+			ans.append("<html><head><title>Index of " + path + "</title></head><body><h1>Index of " + path + "</h1><ul>");
 			string real_dir = SERVER_ROOT + path;
 			logd("About to list Directory: %s\n", real_dir.c_str());
 			DirWalk w(real_dir);
@@ -208,19 +221,19 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 				string realname;
 				urlencode(filename, realname);
 
-				ans.append("<p><a href='" + realname);
+				ans.append("<li><a href='" + realname);
 				if (is_dir)
 				{
 					ans.append("/");
 				}
-				ans.append("'>" + filename + "</a>");
+				ans.append("'>" + filename);
 				if (is_dir)
 				{
-					ans.append(" [dir]");
+					ans.append("/");
 				}
-				ans.append("</p>");
+				ans.append("</a></li>");
 			}
-			ans.append("</body></html>");
+			ans.append("</ul></body></html>");
 
 			Response r;
 			r.set_code(200);
@@ -268,7 +281,6 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 	else
 	{
 		// Dynamic Target
-		// Currently not supported.
 		if (request_get_dynamic_handler(s, path, version, mp) < 0)
 		{
 			Response r;
