@@ -7,7 +7,7 @@ struct DirWalk::_impl
 {
 	int _status;
 	string _dirname;
-	int _handle;
+	intptr_t _handle;
 };
 
 DirWalk::DirWalk() : _p(new _impl)
