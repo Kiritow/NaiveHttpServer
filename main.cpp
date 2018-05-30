@@ -50,7 +50,7 @@ int GetFileContentEx(const string& request_path, int beginat, int length, string
 	string realpath = SERVER_ROOT + request_path;
 	FILE* fp = fopen(realpath.c_str(), "rb");
 	if (fp == NULL) return -1;
-	fseek(fp, length, SEEK_SET);
+	fseek(fp, beginat, SEEK_SET);
 	char buff[1024];
 	string content;
 	int done = 0;

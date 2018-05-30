@@ -19,6 +19,9 @@ void Response::set_code(int code)
 	case 200:
 		header.append("200 OK");
 		break;
+	case 206:
+		header.append("206 Partial Content");
+		break;
 	case 400:
 		header.append("400 Bad Request");
 		break;
@@ -49,6 +52,8 @@ void Response::set_code(int code)
 		header.append("503 Service Unavailable");
 		setContent(default_header(header, "Service is not available for now. Please try later."));
 		break;
+	default:
+		logw("No response code found: %d\n", code);
 	}
 	header.append("\r\n");
 }
@@ -144,8 +149,19 @@ int Response::send_with(sock & s)
 	set_raw("Date", GetCurrentDateString());
 
 	string t = toString();
-	
-	logd("%s\n", t.c_str());
+
+#if CONFIG_LOG_LEVEL>3
+	// Only print header here.
+	string ans;
+	ans.append(header);
+	for (auto& pr : mp)
+	{
+		ans.append(pr.first + ": " + pr.second + "\r\n");
+	}
+	ans.append("\r\n");
+
+	logd("%s", ans.c_str());
+#endif
 
 	return sendn(s, t);
 }
