@@ -128,3 +128,8 @@ int urldecode(const string& url_before, string& out_url_decoded)
 
 	return 0;
 }
+
+int mymin(int a, int b)
+{
+	return a < b ? a : b;
+}

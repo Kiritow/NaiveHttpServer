@@ -34,6 +34,43 @@ int recvheader_raw(sock& s,std::string& header_raw)
 	return ans.size();
 }
 
+int GetFileLength(const string& request_path, int& out_length)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	fseek(fp, 0L, SEEK_END);
+	out_length = ftell(fp);
+	fclose(fp);
+	return 0;
+}
+
+int GetFileContentEx(const string& request_path, int beginat, int length, string& out_content)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	fseek(fp, length, SEEK_SET);
+	char buff[1024];
+	string content;
+	int done = 0;
+	int total = length;
+	while (done < total)
+	{
+		memset(buff, 0, 1024);
+		int ret = fread(buff, 1, mymin(1024,total-done), fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		content.append(string(buff, ret));
+		done += ret;
+	}
+	fclose(fp);
+	out_content = content;
+	return 0;
+}
+
 int GetFileContent(const string& request_path, string& out_content)
 {
 	string realpath = SERVER_ROOT + request_path;
@@ -190,6 +227,75 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 	return 0;
 }
 
+int parse_range_request(const string& range, int content_length, int& _out_beginat,int& _out_length)
+{
+	const char* s = range.c_str();
+	const char* t = s + range.size();
+	const char* p = strstr(s, "bytes=");
+	if (p == NULL)
+	{
+		return -1;
+	}
+	// bytes=...
+	p = p + 6;
+	const char* q = strstr(p, "-");
+	if (q == NULL)
+	{
+		return -2;
+	}
+
+	int beginat;
+	if (q - p > 0)
+	{
+		// bytes=A-...
+		sscanf(p, "%d", &beginat);
+	}
+	else
+	{
+		// bytes=-...
+		beginat = -1;
+	}
+
+	q++;
+	int endat;
+	if (t - q > 0)
+	{
+		// bytes=?-B
+		sscanf(q, "%d", &endat);
+	}
+	else
+	{
+		// bytes=?-
+		endat = -1;
+	}
+
+	if (beginat < 0 && endat < 0)
+	{
+		return -3;
+	}
+
+	if (beginat < 0)
+	{
+		// bytes=-B
+		_out_length = endat;
+		_out_beginat = content_length - _out_length;
+	}
+	else if (endat < 0)
+	{
+		// bytes=A-
+		_out_beginat = beginat;
+		_out_length = content_length - beginat;
+	}
+	else
+	{
+		// bytes=A-B
+		_out_beginat = beginat;
+		_out_length = mymin(content_length - beginat, endat - beginat + 1);
+	}
+
+	return 0;
+}
+
 int request_get_handler(sock& s, const string& in_path, const string& version, const map<string, string>& mp)
 {
 	// URL Decode first
@@ -258,8 +364,8 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 	{
 		// Static Target
 		// Just read out and send it.
-		string content;
-		if (GetFileContent(path, content) < 0)
+		int content_length;
+		if (GetFileLength(path, content_length) < 0)
 		{
 			/// File not readable.
 			Response r;
@@ -269,13 +375,85 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 		}
 		else
 		{
-			Response r;
-			r.set_code(200);
-			string content_type;
-			if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
-			r.setContent(content, content_type);
-			r.send_with(s);
-			return 0;
+			// Requesting partial content?
+			if (mp.find("Range") != mp.end())
+			{
+				int beginat, length;
+				// FIXME: Why mp["Range"] cause compile error?
+				if (parse_range_request(mp.find("Range")->second, content_length, beginat, length) < 0)
+				{
+					Response r;
+					r.set_code(416);
+					r.send_with(s);
+					return 0;
+				}
+
+				logd("Range Request: begin: %d, length: %d\n", beginat, length);
+
+				Response r;
+				string content_type;
+				if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
+				
+				if (length != content_length)
+				{
+					// partial content
+					r.set_code(206);
+					string content;
+					if (GetFileContentEx(path, beginat, length, content) < 0)
+					{
+						/// Error while reading file.
+						Response r;
+						r.set_code(500);
+						r.send_with(s);
+						return 0;
+					}
+					r.setContent(content, content_type);
+				}
+				else
+				{
+					// full content
+					r.set_code(200);
+					string content;
+					if (GetFileContent(path, content) < 0)
+					{
+						/// Error while reading file.
+						Response r;
+						r.set_code(500);
+						r.send_with(s);
+						return 0;
+					}
+					r.setContent(content, content_type);
+				}
+
+				char content_range_buff[64] = { 0 };
+				sprintf(content_range_buff, "bytes %d-%d/%d", beginat, beginat + length - 1, content_length);
+				r.set_raw("Content-Range", content_range_buff);
+
+				r.set_raw("Accept-Ranges", "bytes");
+				r.send_with(s);
+				return 0;
+			}
+			else
+			{
+				// Just a normal request without Range in request header.
+				Response r;
+				r.set_code(200);
+				string content_type;
+				if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
+				string content;
+				if (GetFileContent(path, content) < 0)
+				{
+					/// Error while reading file.
+					Response r;
+					r.set_code(500);
+					r.send_with(s);
+					return 0;
+				}
+				r.setContent(content, content_type);
+				r.set_raw("Accept-Ranges", "bytes");
+				r.send_with(s);
+				return 0;
+			}
 		}
 	}
 	else

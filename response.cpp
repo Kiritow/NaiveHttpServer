@@ -33,6 +33,10 @@ void Response::set_code(int code)
 		header.append("405 Method Not Allowed");
 		setContent(default_header(header, "The method is not allowed."));
 		break;
+	case 416:
+		header.append("416 Requested Range Not Satisfiable");
+		setContent(default_header(header, "Invalid range request header."));
+		break;
 	case 500:
 		header.append("500 Internal Server Error");
 		setContent(default_header(header, "Server has encoutered an internal error while processing your request."));
@@ -140,6 +144,8 @@ int Response::send_with(sock & s)
 	set_raw("Date", GetCurrentDateString());
 
 	string t = toString();
+	
 	logd("%s\n", t.c_str());
+
 	return sendn(s, t);
 }
