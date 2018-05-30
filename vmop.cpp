@@ -20,9 +20,7 @@ lua_State* VM::get()
 	return _luavm;
 }
 
-int VM::runCodeEx(const function<void(lua_State*)>& prepare,
-	const function<void(lua_State*)>& after,
-	const string& LuaSource)
+int VM::runCode(const string& LuaSource)
 {
 	bool err = luaL_loadbuffer(_luavm, LuaSource.c_str(), (int)LuaSource.size(), "LuaVM") || lua_pcall(_luavm, 0, 0, 0);
 	if (err) {
@@ -33,7 +31,12 @@ int VM::runCodeEx(const function<void(lua_State*)>& prepare,
 	return 0;
 }
 
-int VM::runCode(const string& LuaSource)
+int VM::getglobal(const char* name)
 {
-	return runCodeEx([](lua_State*) {}, [](lua_State*) {}, LuaSource);
+	return lua_getglobal(_luavm, name);
+}
+
+void VM::pushnil()
+{
+	lua_pushnil(_luavm);
 }

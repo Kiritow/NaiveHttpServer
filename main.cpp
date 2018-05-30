@@ -136,24 +136,38 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 
 	logd("Execution finished successfully.\n");
 
-	// FIXME: Exception may occur here.
-	Response ur;
 	auto L = v.get();
-	lua_getglobal(L, "response");
-	lua_pushnil(L);
+	Response ur;
+	v.getglobal("response");
+	if (lua_type(L, -1)!=LUA_TTABLE) // type(response)=="table"
+	{
+		return -3;
+	}
+
+	v.pushnil();
+	
 	while (lua_next(L, -2))
 	{
-		if (strcmp(lua_typename(L, lua_type(L, -2)), "string") == 0)  // type(key)=="string"
+		if (lua_type(L, -2)==LUA_TSTRING)  // type(key)=="string"
 		{
-			if (strcmp(lua_tostring(L, -2), "output") != 0)
+			const char* item_name = lua_tostring(L, -2);
+			const char* item_value = lua_tostring(L, -1);
+
+			if ((!item_name) || (!item_value))
 			{
-				// FIXME: if stack[-1] cannot be converted to string, this may cause critical error!
-				ur.set_raw(lua_tostring(L, -2), lua_tostring(L, -1));
+				logd("Error in Lua Script. Skipping an item.\n");
 			}
 			else
 			{
-				ur.setContentRaw(lua_tostring(L, -1));
-			}
+				if (strcmp(item_name, "output") != 0)
+				{
+					ur.set_raw(item_name, item_value);
+				}
+				else
+				{
+					ur.setContentRaw(lua_tostring(L, -1));
+				}
+			}			
 		}
 		lua_pop(L, 1);
 	}

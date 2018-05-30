@@ -14,11 +14,11 @@ public:
 	VM& operator = (VM&&) = delete;
 	~VM();
 
-	int runCodeEx(const std::function<void(lua_State*)>& prepare, 
-		const std::function<void(lua_State*)>& after,
-		const std::string& LuaSource);
-
 	int runCode(const std::string& LuaSource);
+
+	// Lua C API Wrapper
+	int getglobal(const char* name); // Lua -> Stack
+	void pushnil(); // C -> Stack
 
 	// ONLY For Experimental Use.
 	// This method should be removed in future.
