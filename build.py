@@ -99,13 +99,17 @@ def CleanObject(source_list):
             print('Removing '+t+'...')
             RemoveFileES(t)
 
-slst=ScanSource('.')
-if(len(argv)>1 and argv[1]=='clean'):
-    CleanObject(slst)
-else:
-    if(len(argv)==1):
-        BuildAll(slst)
-    elif(len(argv)==2):
-        BuildAll(slst,argv[1])
+def build():
+    slst=ScanSource('.')
+    if(len(argv)>1 and argv[1]=='clean'):
+        CleanObject(slst)
     else:
-        BuildAll(slst,argv[1],argv[2])
+        if(len(argv)==1):
+            BuildAll(slst)
+        elif(len(argv)==2):
+            BuildAll(slst,argv[1])
+        else:
+            BuildAll(slst,argv[1],argv[2])
+
+if __name__=='__main__' :
+    build()
