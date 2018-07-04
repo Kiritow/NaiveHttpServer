@@ -13,6 +13,7 @@
 #include "response.h"
 #include "util.h"
 #include "log.h"
+#include "black_magic.h"
 
 using namespace std;
 
@@ -745,6 +746,7 @@ void bad_request_handler(sock& s)
 
 int _server_port;
 string _server_root;
+int _deploy_mode;
 const int& _get_bind_port()
 {
 	return _server_port;
@@ -752,6 +754,10 @@ const int& _get_bind_port()
 const string& _get_server_root()
 {
 	return _server_root;
+}
+const int& _get_deploy_mode()
+{
+	return _deploy_mode;
 }
 
 int read_config()
@@ -778,6 +784,7 @@ int read_config()
 	}
 
 	lua_State* L = v.get();
+	lua_getglobal(L, "deploy_mode");
 	lua_getglobal(L, "server_root");
 	lua_getglobal(L, "server_port");
 	if (!lua_isinteger(L, -1))
@@ -792,8 +799,14 @@ int read_config()
 		return -2;
 	}
 	_server_root = lua_tostring(L, -2);
+	if (!lua_isinteger(L, -3))
+	{
+		loge("deploy_mode is not integer");
+		return -3;
+	}
+	_deploy_mode = lua_tointeger(L, -3);
 
-	logd("Read from configure file:\nServerRoot: %s\nBindPort: %d\n", _server_root.c_str(), _server_port);
+	logd("Read from configure file:\nServerRoot: %s\nBindPort: %d\nDeploy Mode: %d\n", _server_root.c_str(), _server_port,_deploy_mode);
 	return 0;
 }
 
@@ -823,6 +836,23 @@ int main()
 	}
 	logi("Server started at port %d\n",BIND_PORT);
 	logi("Server root is %s\n", SERVER_ROOT.c_str());
+
+	if (DEPLOY_MODE != 0)
+	{
+		logi("Entering rapid mode, black magic started.");
+		int ret=black_magic(t);
+		if (ret == 0)
+		{
+			logi("Server closed from rapid mode.\n");
+			return 0;
+		}
+		else
+		{
+			loge("Failed to enter rapid mode.\n");
+			return 0;
+		}
+	}
+
 	logi("Starting thread pool...\n");
 	ThreadPool tp(10);
 	logi("Server is now ready for connections.\n");
