@@ -42,7 +42,7 @@ def BuildSingle(filename,compile_option):
         print('Source has been compiled before. '+filename)
         return False,object_name
 
-    compiler='g++ -std=c++14'
+    compiler='g++ -ILogger -std=c++14'
 
     if(filename.endswith('.cpp')):
         object_name=filename.replace('.cpp','.o')
