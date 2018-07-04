@@ -105,7 +105,7 @@ int urlencode(const string& url_before, string& out_url_encoded)
 	return 0;
 }
 
-int urldecode(const string& url_before, string& out_url_decoded)
+int urldecode_real(const string& url_before, string& out_url_decoded)
 {
 	string ans;
 	int len = url_before.size();
@@ -127,6 +127,74 @@ int urldecode(const string& url_before, string& out_url_decoded)
 	out_url_decoded = ans;
 
 	return 0;
+}
+
+int urldecode(const string& url_before, string& out_url_decoded, map<string, string>& out_param)
+{
+	size_t idx = url_before.find("?");
+	if (idx == string::npos)
+	{
+		// No parameters. Fallback to urldecode.
+		return urldecode_real(url_before, out_url_decoded);
+	}
+	else // ....?para=value&para2=value
+	{
+		// okay we have params, yeah?
+		out_param.clear();
+
+		string frontpart = url_before.substr(0, idx);
+		urldecode_real(frontpart, out_url_decoded);
+		int len = url_before.size();
+		int now = idx + 1;
+		// Things get weird...
+		while (true)
+		{
+			size_t nidx = url_before.find("&", now);
+			size_t endpoint;
+			if (nidx != string::npos)
+			{
+				// Still have next part
+				endpoint = nidx;
+			}
+			else
+			{
+				// Oh we are at the end
+				endpoint = len;
+			}
+
+			// separate it
+			string current = url_before.substr(now, endpoint - now);
+			size_t midx = current.find("=");
+			if (midx != string::npos)
+			{
+				// param=
+				if (midx == current.size() - 1)
+				{
+					string a = current.substr(0, midx);
+					string ta;
+					urldecode_real(a, ta);
+					out_param.insert(make_pair(ta, ""));
+				}
+				// param=value
+				else
+				{
+					string a = current.substr(0, midx);
+					string ta;
+					urldecode_real(a, ta);
+					string b = current.substr(midx + 1);
+					string tb;
+					urldecode_real(b, tb);
+					out_param.insert(make_pair(ta, tb));
+				}
+			}
+
+			// This is the end.
+			if (nidx == string::npos) break;
+			now = endpoint + 1;
+		}
+
+		return 0;
+	}
 }
 
 int mymin(int a, int b)
