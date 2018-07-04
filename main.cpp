@@ -743,20 +743,69 @@ void bad_request_handler(sock& s)
 	r.send_with(s);
 }
 
-void testMain()
+int _server_port;
+string _server_root;
+const int& _get_bind_port()
 {
+	return _server_port;
+}
+const string& _get_server_root()
+{
+	return _server_root;
+}
+
+int read_config()
+{
+	// read config.lua 
+	string content;
+	if (GetFileContent("config.lua", content) < 0)
+	{
+		_server_port = 8000;
+		_server_root = ".";
+		logd("Configure file not found. Fallback to default.\n");
+		return 0;
+	}
+
 	VM v;
-	v.runCode("print('Hello World')");
-	v.runCode("response['content_type']='text/html'");
 
-	v.runCode("print(response.content_type)");
+	// The config.lua should set the following variable:
+	// server_port = ... (a number)
+	// server_root = ... (a string)
+	if (v.runCode(content) < 0)
+	{
+		// Failed to run config.lua
+		return -1;
+	}
 
-	exit(0);
+	lua_State* L = v.get();
+	lua_getglobal(L, "server_root");
+	lua_getglobal(L, "server_port");
+	if (!lua_isinteger(L, -1))
+	{
+		loge("server_port is not integer");
+		return -1;
+	}
+	_server_port = lua_tointeger(L, -1);
+	if (!lua_isstring(L, -2))
+	{
+		loge("server_root is not string");
+		return -2;
+	}
+	_server_root = lua_tostring(L, -2);
+
+	logd("Read from configure file:\nServerRoot: %s\nBindPort: %d\n", _server_root.c_str(), _server_port);
+	return 0;
 }
 
 int main()
 {
 	logi("NaiveHTTPServer Started.\n");
+	if (read_config() < 0)
+	{
+		loge("Failed to read configure. Fatal error.\n");
+		return 0;
+	}
+
 	serversock t;
 	if (t.set_reuse() < 0)
 	{
@@ -773,6 +822,7 @@ int main()
 		return 0;
 	}
 	logi("Server started at port %d\n",BIND_PORT);
+	logi("Server root is %s\n", SERVER_ROOT.c_str());
 	logi("Starting thread pool...\n");
 	ThreadPool tp(10);
 	logi("Server is now ready for connections.\n");

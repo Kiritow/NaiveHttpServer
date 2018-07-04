@@ -12,7 +12,7 @@ A Modern C++ HTTP Serevr Implemention
 >
 > POST (POST静态资源会返回405 Method Not Allowed)
 
-**支持静态资源**, Range请求头暂不支持, 数据压缩暂不支持.
+**支持静态资源**, **支持Range请求头**, 数据压缩暂不支持.
 
 **支持Lua作为服务器端脚本执行**.
 
@@ -20,7 +20,9 @@ A Modern C++ HTTP Serevr Implemention
 
 ### 配置
 
-端口号和服务器根目录暂不支持动态指定, 可以通过修改[config.h](config.h)来配置.
+端口号和服务器根目录支持动态指定, 默认端口是8000, 根目录是当前目录.
+
+通过在启动文件夹创建的config.lua中设置server_root和server_port可以覆盖默认设置.
 
 ### 编译
 

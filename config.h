@@ -1,4 +1,8 @@
 #pragma once
+#include <string>
 
-#define BIND_PORT 8000
-#define SERVER_ROOT std::string(".")
+const int& _get_bind_port();
+const std::string& _get_server_root();
+
+#define BIND_PORT _get_bind_port()
+#define SERVER_ROOT _get_server_root()
