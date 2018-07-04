@@ -167,10 +167,14 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 	logd("Preparing helper...\n");
 
 	if (v.runCode("helper={} helper.print=function(...) local t=table.pack(...) "s +
+		"if(response.output==nil) then response.output='' end " + 
+		"local temp='' " +
 		"for i,v in ipairs(t) do " +
-		"if(#(response.output)>0) then response.output=response.output..'\t' end " +
-		"response.output = response.output .. tostring(v) " +
-		"end end ") < 0)
+		"if(#(temp)>0) then temp = temp .. '\\t' end " +
+		"temp = temp .. tostring(v) " +
+		"end " +
+		"response.output = response.output .. temp .. '\\n' " + 
+		"end ") < 0)
 	{
 		loge("Failed to prepare helper.\n");
 		return -2;
@@ -491,11 +495,17 @@ int request_post_handler(sock& s, const string& path, const string& version, con
 	}
 	else
 	{
+		auto iter = mp.find("Content-Length");
+		int content_length;
 		// Dynamic Target
-		// Currently not supported.
-		Response r;
-		r.set_code(501);
-		r.send_with(s);
+		if (iter == mp.end() || sscanf(iter->second.c_str(), "%d", &content_length) != 1)
+		{
+			logd("Failed to get content length.\n");
+			Response r;
+			r.set_code(400);
+			r.send_with(s);
+			return 0;
+		}
 		return 0;
 	}
 }
