@@ -17,6 +17,15 @@
 
 using namespace std;
 
+bool isHttpHeader(const std::string& header_raw)
+{
+	if (header_raw.find("\r\n\r\n") != std::string::npos)
+	{
+		return true;
+	}
+	else return false;
+}
+
 int recvheader_raw(sock& s,std::string& header_raw)
 {
 	std::string ans;
@@ -26,7 +35,7 @@ int recvheader_raw(sock& s,std::string& header_raw)
 		int ret=recvline(s,tmp);
 		if(ret<0) return ret;
 		ans.append(tmp);
-		if(ans.find("\r\n\r\n")!=std::string::npos)
+		if(isHttpHeader(ans))
 		{
 			break;
 		}
@@ -672,44 +681,25 @@ int request_unknown_handler(sock& s, const string& path, const string& version, 
 	return 0;
 }
 
-int request_handler(sock& s)
+int request_handler_main(sock& s,const std::string& header_raw)
 {
-	logd("RequestHandler sock(%p): Started\n", &s);
-	string peer_ip;
-	int peer_port;
-	if (s.getpeer(peer_ip, peer_port) < 0)
-	{
-		logd("RequestHandler sock(%p): Failed to get peer info. This is not an error.\n",&s);
-	}
-	else
-	{
-		logd("RequestHandler sock(%p): Connected From %s:%d\n", &s, peer_ip.c_str(), peer_port);
-	}
-
-	string header_raw;
-	int ret=recvheader_raw(s,header_raw);
-	if(ret<0)
-	{
-		return -1;
-	}
-	logd("RequestHandler sock(%p): Header Received.\n", &s);
 	string method;
 	string path;
 	string version;
 	map<string, string> mp;
-	ret = parse_header(header_raw, method, path, version, mp);
+	int ret = parse_header(header_raw, method, path, version, mp);
 	logd("RequestHandler sock(%p): Header Parse Finished.\n", &s);
 	if (ret < 0)
 	{
 		return -2;
 	}
 
-	logx(4,"==========sock(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &s, method.c_str(), path.c_str(), version.c_str());
+	logd("==========sock(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &s, method.c_str(), path.c_str(), version.c_str());
 	for (auto& pr : mp)
 	{
-		logx(4,"%s\t %s\n", pr.first.c_str(), pr.second.c_str());
+		logx(4, "%s\t %s\n", pr.first.c_str(), pr.second.c_str());
 	}
-	logx(4,"^^^^^^^^^^sock(%p)^^^^^^^^^^\n", &s);
+	logd("^^^^^^^^^^sock(%p)^^^^^^^^^^\n", &s);
 	logd("RequestHandler sock(%p): Finished Successfully.\n", &s);
 
 	if (method == "GET")
@@ -733,8 +723,33 @@ int request_handler(sock& s)
 			return 3;
 		}
 	}
-	
+
 	return 0;
+}
+
+int request_handler(sock& s)
+{
+	logd("RequestHandler sock(%p): Started\n", &s);
+	string peer_ip;
+	int peer_port;
+	if (s.getpeer(peer_ip, peer_port) < 0)
+	{
+		logd("RequestHandler sock(%p): Failed to get peer info. This is not an error.\n",&s);
+	}
+	else
+	{
+		logd("RequestHandler sock(%p): Connected From %s:%d\n", &s, peer_ip.c_str(), peer_port);
+	}
+
+	string header_raw;
+	int ret=recvheader_raw(s,header_raw);
+	if(ret<0)
+	{
+		return -1;
+	}
+	logd("RequestHandler sock(%p): Header Received.\n", &s);
+	
+	return request_handler_main(s, header_raw);
 }
 
 void bad_request_handler(sock& s)
@@ -829,7 +844,7 @@ int main()
 		loge("Failed to bind at port %d\n",BIND_PORT);
 		return 0;
 	}
-	if(t.listen(10)<0)
+	if(t.listen(1024)<0)
 	{
 		loge("Failed to listen at port %d\n",BIND_PORT);
 		return 0;
@@ -839,7 +854,7 @@ int main()
 
 	if (DEPLOY_MODE != 0)
 	{
-		logi("Entering rapid mode, black magic started.");
+		logi("Entering rapid mode, black magic started.\n");
 		int ret=black_magic(t);
 		if (ret == 0)
 		{
