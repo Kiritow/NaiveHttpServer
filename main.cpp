@@ -7,6 +7,7 @@
 #include "config.h"
 #include "dirop.h"
 #include "GSock/gsock.h"
+#include "GSock/gsock_helper.h"
 #include "NaiveThreadPool/ThreadPool.h"
 #include "vmop.h"
 #include "request.h"
@@ -100,6 +101,29 @@ int GetFileContent(const string& request_path, string& out_content)
 	}
 	fclose(fp);
 	out_content = content;
+	return 0;
+}
+
+// Read and directly send
+int ReadFileAndSend(Response& req, sock& s, const string& request_path)
+{
+	req.send_with(s);
+	sock_helper sp(s);
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	char buff[10240];
+	string content;
+	while (true)
+	{
+		int ret = fread(buff, 1, 10240, fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		sp.sendall(buff, ret);
+	}
+	fclose(fp);
 	return 0;
 }
 
@@ -465,20 +489,16 @@ int request_get_handler(sock& s, const string& in_path, const string& version, c
 				// Just a normal request without Range in request header.
 				Response r;
 				r.set_code(200);
+				r.set_raw("Accept-Ranges", "bytes");
 				string content_type;
 				if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
-				string content;
-				if (GetFileContent(path, content) < 0)
+				if (ReadFileAndSend(r,s, path) < 0)
 				{
 					/// Error while reading file.
 					Response r;
 					r.set_code(500);
 					r.send_with(s);
-					return 0;
 				}
-				r.setContent(content, content_type);
-				r.set_raw("Accept-Ranges", "bytes");
-				r.send_with(s);
 				return 0;
 			}
 		}

@@ -36,8 +36,11 @@ int black_magic(serversock& t)
 				{
 					loge("Failed to accept.\n");
 				}
-				logd("Adding %p to epoll.\n", ps);
-				ep.add(*ps, EPOLLIN);
+				else
+				{
+					logd("Adding %p to epoll.\n", ps);
+					ep.add(*ps, EPOLLIN);
+				}
 			}
 			else
 			{
