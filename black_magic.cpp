@@ -61,7 +61,10 @@ int black_magic(serversock& t)
 						else
 						{
 							logd("New connection accepted. Adding %p to epoll.\n", ps);
-							ep.add(*ps, EPOLLIN | EPOLLET | EPOLLERR);
+							if (ep.add(*ps, EPOLLIN | EPOLLET | EPOLLERR) < 0)
+							{
+								loge("Failed to adding to epoll. errno=%d\n", errno);
+							}
 						}
 					}
 				}
@@ -96,8 +99,8 @@ int black_magic(serversock& t)
 							if (isHttpHeader(mp[&s]))
 							{
 								// This is http header.
-								request_handler_main(s, mp[&s]);
-								logd("HTTP handle finished. removing from epoll and releasing resource... %p\n", &s);
+								int hret=request_handler_main(s, mp[&s]);
+								logd("HTTP handle finished, ret=%d. removing from epoll and releasing resource... %p\n", hret, &s);
 								mp.erase(&s);
 								ep.del(s, EPOLLIN | EPOLLET | EPOLLERR);
 								delete &s;
