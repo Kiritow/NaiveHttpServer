@@ -1,5 +1,7 @@
 #include "util.h"
 #include "log.h"
+#include "config.h"
+#include "GSock/gsock_helper.h"
 using namespace std;
 
 int sendn(sock& s, const std::string& in_data)
@@ -200,4 +202,127 @@ int urldecode(const string& url_before, string& out_url_decoded, map<string, str
 int mymin(int a, int b)
 {
 	return a < b ? a : b;
+}
+
+int GetFileContent(const string& request_path, string& out_content)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	char buff[1024];
+	string content;
+	while (true)
+	{
+		memset(buff, 0, 1024);
+		int ret = fread(buff, 1, 1024, fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		content.append(string(buff, ret));
+	}
+	fclose(fp);
+	out_content = content;
+	return 0;
+}
+
+int GetFileContentEx(const string& request_path, int beginat, int length, string& out_content)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	fseek(fp, beginat, SEEK_SET);
+	char buff[1024];
+	string content;
+	int done = 0;
+	int total = length;
+	while (done < total)
+	{
+		memset(buff, 0, 1024);
+		int ret = fread(buff, 1, mymin(1024, total - done), fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		content.append(string(buff, ret));
+		done += ret;
+	}
+	fclose(fp);
+	out_content = content;
+	return 0;
+}
+
+int GetFileLength(const string& request_path, int& out_length)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	fseek(fp, 0L, SEEK_END);
+	out_length = ftell(fp);
+	fclose(fp);
+	return 0;
+}
+
+#define ct(abbr,target) else if(endwith(path,abbr)) out_content_type=target
+
+int GetFileContentType(const string& path, string& out_content_type)
+{
+	if (endwith(path, ".html"))
+	{
+		out_content_type = "text/html";
+	}
+	ct(".bmp", "application/x-bmp");
+	ct(".doc", "application/msword");
+	ct(".ico", "image/x-icon");
+	ct(".java", "java/*");
+	ct(".class", "java/*");
+	ct(".jpeg", "image/jpeg");
+	ct(".jpg", "image/jpeg");
+	ct(".png", "image/png");
+	ct(".swf", "application/x-shockwave-flash");
+	ct(".xhtml", "text/html");
+	ct(".apk", "application/vnd.android.package-archive");
+	ct(".exe", "application/x-msdownload");
+	ct(".htm", "text/html");
+	ct(".js", "application/x-javascript");
+	ct(".mp3", "audio/mp3");
+	ct(".mp4", "video/mpeg4");
+	ct(".mpg", "video/mpg");
+	ct(".pdf", "application/pdf");
+	ct(".rmvb", "application/vnd.rn-realmedia-vbr");
+	ct(".torrent", "application/x-bittorrent");
+	ct(".txt", "text/plain");
+	else
+	{
+		/// Not Support Content Type
+		return -1;
+	}
+
+	/// Supported ContentType
+	return 0;
+}
+
+#undef ct
+
+// Read and directly send
+int ReadFileAndSend(Response& req, sock& s, const string& request_path)
+{
+	req.send_with(s);
+	sock_helper sp(s);
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	char buff[10240];
+	string content;
+	while (true)
+	{
+		int ret = fread(buff, 1, 10240, fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		sp.sendall(buff, ret);
+	}
+	fclose(fp);
+	return 0;
 }
