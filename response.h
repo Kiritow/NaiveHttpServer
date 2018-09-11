@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <map>
-#include "black_magic.h"
+#include "NetworkProvider.h"
 
 class Response
 {
@@ -21,8 +21,6 @@ public:
 	void setContentRaw(const std::string& content);
 
 	std::string toString();
-
-	void send_with(conn_data& conn);
 private:
 	std::string header;
 	std::map<std::string, std::string> mp;

@@ -4,67 +4,23 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <algorithm>
 #include "config.h"
 #include "dirop.h"
 #include "GSock/gsock.h"
 #include "GSock/gsock_helper.h"
 #include "NaiveThreadPool/ThreadPool.h"
 #include "vmop.h"
-#include "request.h"
-#include "response.h"
-#include "util.h"
 #include "log.h"
+#include "util.h"
 #include "black_magic.h"
 #include "get.h"
 #include "post.h"
-#include "parser.h"
 using namespace std;
 
-bool isHttpHeaderEx(const std::string& header_raw, int& posEnd)
+void request_handler_unknown(const Request& req, Response& res)
 {
-	auto x = header_raw.find("\r\n\r\n");
-	if (x == std::string::npos)
-	{
-		posEnd = -1;
-		return false;
-	}
-	else
-	{
-		posEnd = x;
-		return true;
-	}
-}
-
-bool isHttpHeader(const std::string& header_raw)
-{
-	int x;
-	return isHttpHeaderEx(header_raw, x);
-}
-
-int recvheader_raw(sock& s,std::string& header_raw)
-{
-	std::string ans;
-	while(true)
-	{
-		std::string tmp;
-		int ret=recvline(s,tmp);
-		if(ret<0) return ret;
-		ans.append(tmp);
-		if(isHttpHeader(ans))
-		{
-			break;
-		}
-	}
-	header_raw=ans;
-	return ans.size();
-}
-
-int request_unknown_handler(sock& s, const string& path, const string& version, const map<string, string>& mp)
-{
-	Response r;
-	r.set_code(501);
-	r.send_with(s);
-	return 0;
+	res.set_code(501);
 }
 
 // Returns:
@@ -74,105 +30,96 @@ int request_unknown_handler(sock& s, const string& path, const string& version, 
 // 2 Failed to handle POST request. (Error)
 // 3 POST request need more data. (Not Error)
 // 4 Unsupported http method. (Error)
-int request_handler_mainK(conn_data& conn)
+int request_handler(const Request& req,Response& res)
 {
-	Request req = parse_header(conn.recv_data);
-	logd("RequestHandler sock(%p): Header Parse Finished. conn=%p\n", &conn);
-	if (!req.isReady())
-	{
-		return -1;
-	}
-
-	logd("==========conn(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &conn, req.method.c_str(), req.path.c_str(), req.http_version.c_str());
-	for (auto& pr : mp)
+	logd("==========request(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", 
+		&req, req.method.c_str(), req.path.c_str(), req.http_version.c_str());
+	for (auto& pr : req.header)
 	{
 		logx(4, "%s\t %s\n", pr.first.c_str(), pr.second.c_str());
 	}
-	logd("^^^^^^^^^^conn(%p)^^^^^^^^^^\n", &conn);
-	logd("RequestHandler conn(%p): Finished Successfully.\n", &conn);
+	logd("^^^^^^^^^^request(%p)^^^^^^^^^^\n", &req);
 
 	if (req.method == "GET")
 	{
-		if (request_get_handlerK(conn,req) < 0)
+		if (request_handler_get(req,res) < 0)
 		{
-			return 1;
+			return -1;
 		}
 	}
 	else if (req.method == "POST")
 	{
-		int ret = request_post_handlerK(conn);
-		if (ret < 0)
+		if (request_handler_post(req, res) < 0)
 		{
-			return 2;
-		}
-		else if (ret > 0)
-		{
-			return 3;
+			return -2;
 		}
 	}
 	else
 	{
-		if (request_unknown_handlerK(conn) < 0)
-		{
-			return 3;
-		}
+		request_handler_unknown(req, res);
 	}
 
 	return 0;
 }
 
-// Handle request with given data
+// Used in blocked socket (Normal mode)
 // Returns:
-// 0 Header is parsed and request is handled. (data to sending back is already saved in conn.send_data)
-// 1 Header cannot be parsed and need more data.
-// NOTICE:
-// header_raw may contain more data if this is a POST request.
-int request_handler_headerK(conn_data& conn)
+// 0:  OK
+// -1: socket read failed.
+// -2: Invalid header
+// -3: Post without content length
+int receive_request(sock& s,Request& req)
 {
-	int pos;
-	if (isHttpHeaderEx(conn.recv_data,pos))
+	string str;
+	char buff[1024];
+	size_t endpos;
+	while (true)
 	{
-		request_handler_mainK(conn);
+		int ret = s.recv(buff, 1024);
+		if (ret <= 0) return -1;
+		str.append(string(buff, ret));
+		if (string::npos != (endpos = str.find("\r\n\r\n")))
+		{
+			break;
+		}
 	}
+	int ret = parse_header(str, req);
+	if (ret < 0) return -2;
+	if (req.method == "POST")
+	{
+		auto iter = req.header.find("Content-Length");
+		int content_length = 0;
+		if (iter != req.header.end() && sscanf(iter->second.c_str(), "%d", &content_length) == 1)
+		{
+			// Try to receive posted data.
+			// First check if some posted data is already in str
+			if (endpos + 4 != str.size())
+			{
+				// Some posted data here
+				req.data = str.substr(endpos + 4);
+			}
+
+			int done = 0;
+			while (done < content_length)
+			{
+				int ret = s.recv(buff, std::min(1024, content_length - done));
+				if (ret <= 0) return -1;
+				req.data.append(string(buff, ret));
+				done += ret;
+			}
+		}
+		else return -3;
+	}
+
+	return 0;
 }
 
-int request_handler_enter(sock& s, conn_data& data)
+// Used in blocked socket (Normal mode)
+void send_response(sock& s, Response& res)
 {
-	// try to parse it
-	int ret = request_handler_headerK(data);
-	if (ret == 1) return 0;
-}
-
-int request_handler(sock& s)
-{
-	logd("RequestHandler sock(%p): Started\n", &s);
-	string peer_ip;
-	int peer_port;
-	if (s.getpeer(peer_ip, peer_port) < 0)
-	{
-		logd("RequestHandler sock(%p): Failed to get peer info. This is not an error.\n",&s);
-	}
-	else
-	{
-		logd("RequestHandler sock(%p): Connected From %s:%d\n", &s, peer_ip.c_str(), peer_port);
-	}
-
-	string header_raw;
-	int ret=recvheader_raw(s,header_raw);
-	if(ret<0)
-	{
-		return -1;
-	}
-	logd("RequestHandler sock(%p): Header Received.\n", &s);
-	
-	return request_handler_main(s, header_raw);
-}
-
-void bad_request_handler(sock& s)
-{
-	Response r;
-	r.set_code(400);
-	r.send_with(s);
+	string str = res.toString();
+	sock_helper sp(s);
+	sp.sendall(str);
 }
 
 int _server_port;
@@ -197,7 +144,7 @@ int read_config()
 	string content;
 	if (GetFileContent("config.lua", content) < 0)
 	{
-		_server_port = 8000;
+		_server_port = 9001;
 		_server_root = ".";
 		logd("Configure file not found. Fallback to default.\n");
 		return 0;
@@ -271,17 +218,17 @@ int main()
 	if (DEPLOY_MODE != 0)
 	{
 		logi("Entering rapid mode, black magic started.\n");
-		int ret=black_magic(t);
+		int ret = black_magic(t);
 		if (ret == 0)
 		{
 			logi("Server closed from rapid mode.\n");
-			return 0;
 		}
 		else
 		{
 			loge("Failed to enter rapid mode.\n");
-			return 0;
 		}
+
+		return 0;
 	}
 
 	logi("Starting thread pool...\n");
@@ -297,21 +244,25 @@ int main()
 			break;
 		}
 		if(tp.start([ps](){
-					int ret=request_handler(*ps);
-					logd("request handler returns %d\n",ret);
-					if (ret < 0)
-					{
-						bad_request_handler(*ps);
-					}
-                    else if(ret>0)
-                    {
-                        // 404 if ret>0
-                        Response r;
-                        r.set_code(404);
-                        r.send_with(*ps);
-                    }
-					delete ps;
-				})<0)
+			logd("receving request on sock %p\n", ps);
+			Request req;
+			int ret = receive_request(*ps, req);
+			if (ret < 0)
+			{
+				logd("Failed to receive request on sock %p\n", ps);
+			}
+			else
+			{
+				Response res;
+				ret = request_handler(req, res);
+				if (ret < 0)
+				{
+					res.set_code(400);
+				}
+				send_response(*ps, res);
+			}
+			delete ps;
+		})<0)
 		{
 			logw("Failed to start job at thread pool.\n");
 		}

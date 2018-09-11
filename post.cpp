@@ -6,11 +6,11 @@
 #include "config.h"
 #include "log.h"
 #include "dirop.h"
-#include "parser.h"
 #include <cstring>
 using namespace std;
 
-int request_post_dynamic_handler(sock& s, const string& path_decoded, const string& version, const map<string, string>& mp, const string& post_content)
+static int request_handler_post_dynamic(const Request& req, Response& res,
+	const string& path_decoded, const map<string, string>& url_param) 
 {
 	logd("Loading lua file: %s\n", path_decoded.c_str());
 
@@ -24,20 +24,20 @@ int request_post_dynamic_handler(sock& s, const string& path_decoded, const stri
 	VM v;
 	auto L = v.get();
 	lua_newtable(L);
-	lua_pushstring(L, version.c_str());
+	lua_pushstring(L, req.http_version.c_str());
 	lua_setfield(L, 1, "http_version"); // request["http_version"]=...
 
 	lua_pushstring(L, "POST");
 	lua_setfield(L, 1, "method"); // request["method"]="POST"
 
-	for (const auto& pr : mp)
+	for (const auto& pr : req.header)
 	{
 		lua_pushstring(L, pr.second.c_str());
 		lua_setfield(L, 1, pr.first.c_str()); // request[...]=...
 	}
 
 	// Parameter (Posted Content). May contain binary content.
-	lua_pushlstring(L, post_content.data(), post_content.size());
+	lua_pushlstring(L, req.data.data(), req.data.size());
 	lua_setfield(L, 1, "param");
 
 	lua_setglobal(L, "request");
@@ -72,7 +72,6 @@ int request_post_dynamic_handler(sock& s, const string& path_decoded, const stri
 
 	logd("Execution finished successfully.\n");
 
-	Response ur;
 	v.getglobal("response");
 
 	if (!lua_istable(L, -1)) // type(response)~="table"
@@ -98,90 +97,62 @@ int request_post_dynamic_handler(sock& s, const string& path_decoded, const stri
 			{
 				if (strcmp(item_name, "output") != 0)
 				{
-					ur.set_raw(item_name, item_value);
+					res.set_raw(item_name, item_value);
 				}
 				else
 				{
-					ur.setContentRaw(item_value);
+					res.setContentRaw(item_value);
 				}
 			}
 		}
 		lua_pop(L, 1);
 	}
-	ur.set_code(200);
-	ur.send_with(s);
 
+	res.set_code(200);
 	return 0;
 }
 
-int request_post_handler(sock& s, const string& in_path, const string& version, const map<string, string>& mp)
+int request_handler_post(const Request& req, Response& res)
 {
-	// URL Decode first
+	// URL decoded path
 	string path;
-	map<string, string> param;
-	if (urldecode(in_path, path, param) < 0)
+	map<string, string> url_param;
+	if (urldecode(req.path, path, url_param) < 0)
 	{
-		loge("Failed to decode url : %s\n", in_path.c_str());
+		loge("Failed to decode url : %s\n", req.path.c_str());
 		return -1;
 	}
 
-	// Request to / is invalid for POST method.
+	// Request to / would be dispatched to /index.lua
 	if (endwith(path, "/"))
 	{
-		// invalid request.
-		return -1;
-	}
-
-	int request_type = get_request_type(path);
-	if (request_type < 0)
-	{
-		Response r;
-		r.set_code(404);
-		r.send_with(s);
+		Request xreq = req;
+		xreq.path += "index.lua";
+		if (request_handler_post(xreq, res) < 0)
+		{
+			res.set_code(404);
+		}
 		return 0;
 	}
 
-	if (request_type == 0)
+	int request_type = get_request_path_type(path);
+	if (request_type < 0)
+	{
+		res.set_code(404);
+		return 0;
+	}
+	else if (request_type == 0)
 	{
 		// Static Target
 		// POST on static target is not allowed.
-		Response r;
-		r.set_code(405);
-		r.send_with(s);
+		res.set_code(405);
 		return 0;
 	}
 	else
 	{
-		auto iter = mp.find("Content-Length");
-		int content_length;
-		// Dynamic Target
-		if (iter == mp.end() || sscanf(iter->second.c_str(), "%d", &content_length) != 1)
+		if (request_handler_post_dynamic(req,res,path,url_param) < 0)
 		{
-			logd("Failed to get content length.\n");
-			Response r;
-			r.set_code(400);
-			r.send_with(s);
-			return 0;
-		}
-
-		// Read content
-		char xtbuf[1024] = { 0 };
-		string post_content;
-		int done = 0;
-		while (done < content_length)
-		{
-			int ret = s.recv(xtbuf, mymin(content_length - done, 1024));
-			if (ret <= 0) return -1;
-			done += ret;
-			post_content.append(string(xtbuf, ret));
-			memset(xtbuf, 0, 1024);
-		}
-
-		if (request_post_dynamic_handler(s, path, version, mp, post_content) < 0)
-		{
-			Response r;
-			r.set_code(500);
-			r.send_with(s);
+			res.set_code(500);
 		}
 		return 0;
 	}

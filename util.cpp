@@ -4,46 +4,11 @@
 #include "GSock/gsock_helper.h"
 using namespace std;
 
-int sendn(sock& s, const std::string& in_data)
-{
-	int done = 0;
-	int total = in_data.size();
-	while (done < total)
-	{
-		int ret = s.send(in_data.c_str() + done, total - done);
-		if (ret <= 0)
-		{
-			return ret;
-		}
-		else
-		{
-			done += ret;
-		}
-	}
-	return done;
-}
-
-int recvline(sock& s, std::string& out)
-{
-	std::string ans;
-	char buff[16];
-	while (true)
-	{
-		buff[0] = buff[1] = 0;
-		int ret = s.recv(buff, 1);
-		if (ret<0) return ret;
-		else if (ret == 0)
-			return -2; /// If connection is closed... (BUG)
-		ans.push_back(buff[0]);
-		if (ans.find("\r\n") != std::string::npos)
-		{
-			break;
-		}
-	}
-	out = ans;
-
-	return ans.size();
-}
+#ifdef _WIN32
+#include <io.h> // access
+#else
+#include <unistd.h>
+#endif
 
 bool endwith(const string& str, const string& target)
 {
@@ -304,25 +269,106 @@ int GetFileContentType(const string& path, string& out_content_type)
 
 #undef ct
 
-// Read and directly send
-int ReadFileAndSend(Response& req, sock& s, const string& request_path)
+int get_request_path_type(const string& path)
 {
-	req.send_with(s);
-	sock_helper sp(s);
-	string realpath = SERVER_ROOT + request_path;
-	FILE* fp = fopen(realpath.c_str(), "rb");
-	if (fp == NULL) return -1;
-	char buff[10240];
-	string content;
-	while (true)
+	string realpath = SERVER_ROOT + path;
+	if (access(realpath.c_str(), 0) < 0) // File not exist
 	{
-		int ret = fread(buff, 1, 10240, fp);
-		if (ret <= 0)
+		// File not exist, maybe dynamic request?
+		// Only Lua extension is planned to support, which means *.php will be treated as a static file.
+		realpath = realpath + ".lua";
+		if (access(realpath.c_str(), 0) < 0)
 		{
-			break;
+			// Not a valid request.
+			return -1;
 		}
-		sp.sendall(buff, ret);
+		else
+		{
+			/// Dynamic Request
+			return 1;
+		}
 	}
-	fclose(fp);
+	else // File exists.
+	{
+		if (endwith(path,".lua")) // XXX.lua
+		{
+			// Dynamic Request
+			return 1;
+		}
+		else
+		{
+			// Static Request
+			// Notice: Binary file should be dynamic request (like CGI), but here just deal it as static file.
+			return 0;
+		}
+	}
+}
+
+int parse_range_request(const string& range, int content_length, int& _out_beginat, int& _out_length)
+{
+	const char* s = range.c_str();
+	const char* t = s + range.size();
+	const char* p = strstr(s, "bytes=");
+	if (p == NULL)
+	{
+		return -1;
+	}
+	// bytes=...
+	p = p + 6;
+	const char* q = strstr(p, "-");
+	if (q == NULL)
+	{
+		return -2;
+	}
+
+	int beginat;
+	if (q - p > 0)
+	{
+		// bytes=A-...
+		sscanf(p, "%d", &beginat);
+	}
+	else
+	{
+		// bytes=-...
+		beginat = -1;
+	}
+
+	q++;
+	int endat;
+	if (t - q > 0)
+	{
+		// bytes=?-B
+		sscanf(q, "%d", &endat);
+	}
+	else
+	{
+		// bytes=?-
+		endat = -1;
+	}
+
+	if (beginat < 0 && endat < 0)
+	{
+		return -3;
+	}
+
+	if (beginat < 0)
+	{
+		// bytes=-B
+		_out_length = endat;
+		_out_beginat = content_length - _out_length;
+	}
+	else if (endat < 0)
+	{
+		// bytes=A-
+		_out_beginat = beginat;
+		_out_length = content_length - beginat;
+	}
+	else
+	{
+		// bytes=A-B
+		_out_beginat = beginat;
+		_out_length = mymin(content_length - beginat, endat - beginat + 1);
+	}
+
 	return 0;
 }

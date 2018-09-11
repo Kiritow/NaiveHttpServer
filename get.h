@@ -1,7 +1,5 @@
-#include "GSock/gsock.h"
-#include <string>
-#include <map>
+#pragma once
 #include "request.h"
-#include "black_magic.h"
+#include "response.h"
 
-int request_get_handlerK(conn_data& conn,const Request& req);
+int request_handler_get(const Request& req, Response& res);

@@ -6,11 +6,11 @@
 #include "config.h"
 #include "log.h"
 #include "dirop.h"
-#include "parser.h"
 #include <cstring>
 using namespace std;
 
-int request_get_dynamic_handler(sock& s, const string& path_decoded, const string& version, const map<string, string>& mp, const map<string, string>& param)
+static int request_handler_get_dynamic(const Request& req,Response& res,
+	const string& path_decoded, const map<string,string>& url_param)
 {
 	logd("Loading lua file: %s\n", path_decoded.c_str());
 
@@ -24,13 +24,13 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 	VM v;
 	auto L = v.get();
 	lua_newtable(L);
-	lua_pushstring(L, version.c_str());
+	lua_pushstring(L, req.http_version.c_str());
 	lua_setfield(L, 1, "http_version"); // request["http_version"]=...
 
 	lua_pushstring(L, "GET");
 	lua_setfield(L, 1, "method"); // request["method"]="GET"
 
-	for (const auto& pr : mp)
+	for (const auto& pr : req.header)
 	{
 		lua_pushstring(L, pr.second.c_str());
 		lua_setfield(L, 1, pr.first.c_str()); // request[...]=...
@@ -38,7 +38,7 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 
 	// Parameter table
 	lua_newtable(L);
-	for (const auto& pr : param)
+	for (const auto& pr : url_param)
 	{
 		lua_pushstring(L, pr.second.c_str());
 		lua_setfield(L, 2, pr.first.c_str()); // request["param"][...]=...
@@ -77,7 +77,6 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 
 	logd("Execution finished successfully.\n");
 
-	Response ur;
 	v.getglobal("response");
 
 	if (!lua_istable(L, -1)) // type(response)~="table"
@@ -103,25 +102,24 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 			{
 				if (strcmp(item_name, "output") != 0)
 				{
-					ur.set_raw(item_name, item_value);
+					res.set_raw(item_name, item_value);
 				}
 				else
 				{
-					ur.setContentRaw(item_value);
+					res.setContentRaw(item_value);
 				}
 			}
 		}
 		lua_pop(L, 1);
 	}
-	ur.set_code(200);
-	ur.send_with(s);
 
+	res.set_code(200);
 	return 0;
 }
 
-int request_get_handlerK(conn_data& conn,const Request& req)
+int request_handler_get(const Request& req, Response& res)
 {
-	// URL Decode first
+	// URL decoded path
 	string path;
 	map<string, string> url_param;
 	if (urldecode(req.path, path, url_param) < 0)
@@ -130,162 +128,149 @@ int request_get_handlerK(conn_data& conn,const Request& req)
 		return -1;
 	}
 
-	// Request to / could be dispatched to /index.html,/index.lua
+	// Request to / would be dispatched to /index.html or /index.lua
 	if (endwith(path, "/"))
 	{
 		Request xreq = req;
 		xreq.path += "index.html";
-		if (request_get_handlerK(s, path + "index.html", version, mp) < 0 &&
-			request_get_handler(s, path + "index.lua", version, mp) < 0)
+		if (request_handler_get(xreq, res) > 0)
 		{
-			// Display a list
-			string ans;
-
-			ans.append("<html><head><title>Index of " + path + "</title></head><body><h1>Index of " + path + "</h1><ul>");
-			string real_dir = SERVER_ROOT + path;
-			logd("About to list Directory: %s\n", real_dir.c_str());
-			DirWalk w(real_dir);
-			logd("DirWalk Created.\n");
-			string filename;
-			int is_dir;
-			while (w.next(filename, is_dir) > 0)
+			Request yreq = req;
+			yreq.path += "index.lua";
+			if (request_handler_get(yreq, res) > 0)
 			{
-				string realname;
-				urlencode(filename, realname);
+				// Display a list
+				string ans;
 
-				ans.append("<li><a href='" + realname);
-				if (is_dir)
+				ans.append("<html><head><title>Index of " + path + "</title></head><body><h1>Index of " + path + "</h1><ul>");
+				string real_dir = SERVER_ROOT + path;
+				logd("About to list Directory: %s\n", real_dir.c_str());
+				DirWalk w(real_dir);
+				logd("DirWalk Created.\n");
+				string filename;
+				int is_dir;
+				while (w.next(filename, is_dir) > 0)
 				{
-					ans.append("/");
+					string realname;
+					urlencode(filename, realname);
+
+					ans.append("<li><a href='" + realname);
+					if (is_dir)
+					{
+						ans.append("/");
+					}
+					ans.append("'>" + filename);
+					if (is_dir)
+					{
+						ans.append("/");
+					}
+					ans.append("</a></li>");
 				}
-				ans.append("'>" + filename);
-				if (is_dir)
-				{
-					ans.append("/");
-				}
-				ans.append("</a></li>");
+				ans.append("</ul></body></html>");
+
+				res.set_code(200);
+				res.setContent(ans);
 			}
-			ans.append("</ul></body></html>");
-
-			Response r;
-			r.set_code(200);
-			r.setContent(ans);
-			r.send_with(s);
-			return 0;
 		}
-		else
-		{
-			return 0;
-		}
+		return 0;
 	}
 
-	int request_type = get_request_type(path);
+	int request_type = get_request_path_type(path);
 	if (request_type < 0)
 	{
-		// Invalid request
-		return -1;
+		// Invalid request (File not found)
+		res.set_code(404);
+		return 1;
 	}
-
-	if (request_type == 0)
+	else if (request_type == 0)
 	{
 		// Static Target
 		// Just read out and send it.
 		int content_length;
 		if (GetFileLength(path, content_length) < 0)
 		{
-			/// File not readable.
-			Response r;
-			r.set_code(500);
-			r.send_with(s);
+			// File not readable.
+			res.set_code(500);
+			return 0;
+		}
+
+		// Requesting partial content?
+		auto range_iter = req.header.find("Range");
+		if (range_iter != req.header.end())
+		{
+			int beginat, length;
+			// FIXME: Why mp["Range"] cause compile error?
+			if (parse_range_request(range_iter->second, content_length, beginat, length) < 0)
+			{
+				res.set_code(416);
+				return 0;
+			}
+
+			logd("Range Request: begin: %d, length: %d\n", beginat, length);
+			string content_type;
+			if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
+
+			if (length != content_length)
+			{
+				// partial content
+				string content;
+				if (GetFileContentEx(path, beginat, length, content) < 0)
+				{
+					/// Error while reading file.
+					res.set_code(500);
+					return 0;
+				}
+				
+				res.set_code(206);
+				res.setContent(content, content_type);
+			}
+			else
+			{
+				// full content
+				string content;
+				if (GetFileContent(path, content) < 0)
+				{
+					/// Error while reading file.
+					res.set_code(500);
+					return 0;
+				}
+				res.set_code(200);
+				res.setContent(content, content_type);
+			}
+
+			char content_range_buff[64] = { 0 };
+			sprintf(content_range_buff, "bytes %d-%d/%d", beginat, beginat + length - 1, content_length);
+			res.set_raw("Content-Range", content_range_buff);
+
+			res.set_raw("Accept-Ranges", "bytes");
 			return 0;
 		}
 		else
 		{
-			// Requesting partial content?
-			if (mp.find("Range") != mp.end())
+			// Just a normal request without Range in request header.
+			string content_type;
+			if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
+
+			string content;
+			if (GetFileContent(path, content) < 0)
 			{
-				int beginat, length;
-				// FIXME: Why mp["Range"] cause compile error?
-				if (parse_range_request(mp.find("Range")->second, content_length, beginat, length) < 0)
-				{
-					Response r;
-					r.set_code(416);
-					r.send_with(s);
-					return 0;
-				}
-
-				logd("Range Request: begin: %d, length: %d\n", beginat, length);
-
-				Response r;
-				string content_type;
-				if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
-
-				if (length != content_length)
-				{
-					// partial content
-					r.set_code(206);
-					string content;
-					if (GetFileContentEx(path, beginat, length, content) < 0)
-					{
-						/// Error while reading file.
-						Response r;
-						r.set_code(500);
-						r.send_with(s);
-						return 0;
-					}
-					r.setContent(content, content_type);
-				}
-				else
-				{
-					// full content
-					r.set_code(200);
-					string content;
-					if (GetFileContent(path, content) < 0)
-					{
-						/// Error while reading file.
-						Response r;
-						r.set_code(500);
-						r.send_with(s);
-						return 0;
-					}
-					r.setContent(content, content_type);
-				}
-
-				char content_range_buff[64] = { 0 };
-				sprintf(content_range_buff, "bytes %d-%d/%d", beginat, beginat + length - 1, content_length);
-				r.set_raw("Content-Range", content_range_buff);
-
-				r.set_raw("Accept-Ranges", "bytes");
-				r.send_with(s);
+				/// Error while reading file.
+				res.set_code(500);
 				return 0;
 			}
-			else
-			{
-				// Just a normal request without Range in request header.
-				Response r;
-				r.set_code(200);
-				r.set_raw("Accept-Ranges", "bytes");
-				string content_type;
-				if (GetFileContentType(path, content_type) < 0) content_type = "text/plain";
-				if (ReadFileAndSend(r, s, path) < 0)
-				{
-					/// Error while reading file.
-					Response r;
-					r.set_code(500);
-					r.send_with(s);
-				}
-				return 0;
-			}
+			res.set_code(200);
+			res.set_raw("Accept-Ranges", "bytes");
+			res.setContent(content, content_type);
+
+			return 0;
 		}
 	}
 	else
 	{
 		// Dynamic Target
-		if (request_get_dynamic_handler(s, path, version, mp, param) < 0)
+		if (request_handler_get_dynamic(req, res, path, url_param) < 0)
 		{
-			Response r;
-			r.set_code(500);
-			r.send_with(s);
+			res.set_code(500);
 		}
 		return 0;
 	}

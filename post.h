@@ -1,5 +1,5 @@
-#include "GSock/gsock.h"
-#include <string>
-#include <map>
+#pragma once
+#include "request.h"
+#include "response.h"
 
-int request_post_handler(sock& s, const std::string& in_path, const std::string& version, const std::map<std::string, std::string>& mp);
+int request_handler_post(const Request& req, Response& res);
