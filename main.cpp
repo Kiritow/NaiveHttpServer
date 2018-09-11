@@ -24,12 +24,9 @@ void request_handler_unknown(const Request& req, Response& res)
 }
 
 // Returns:
-// -1 Request is not ready. (This is an error)
 // 0 Request is handled successfully.
-// 1 Failed to handle GET request. (Error)
-// 2 Failed to handle POST request. (Error)
-// 3 POST request need more data. (Not Error)
-// 4 Unsupported http method. (Error)
+// -1 Failed to handle GET request. (Error)
+// -2 Failed to handle POST request. (Error)
 int request_handler(const Request& req,Response& res)
 {
 	logd("==========request(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", 

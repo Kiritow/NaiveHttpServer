@@ -2,6 +2,7 @@
 #include "log.h"
 #include "config.h"
 #include "GSock/gsock_helper.h"
+#include <cstring>
 using namespace std;
 
 #ifdef _WIN32
