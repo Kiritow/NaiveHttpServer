@@ -119,21 +119,23 @@ int request_get_dynamic_handler(sock& s, const string& path_decoded, const strin
 	return 0;
 }
 
-int request_get_handler(sock& s, const string& in_path, const string& version, const map<string, string>& mp)
+int request_get_handlerK(conn_data& conn,const Request& req)
 {
 	// URL Decode first
 	string path;
-	map<string, string> param;
-	if (urldecode(in_path, path, param) < 0)
+	map<string, string> url_param;
+	if (urldecode(req.path, path, url_param) < 0)
 	{
-		loge("Failed to decode url : %s\n", in_path.c_str());
+		loge("Failed to decode url : %s\n", req.path.c_str());
 		return -1;
 	}
 
 	// Request to / could be dispatched to /index.html,/index.lua
 	if (endwith(path, "/"))
 	{
-		if (request_get_handler(s, path + "index.html", version, mp) < 0 &&
+		Request xreq = req;
+		xreq.path += "index.html";
+		if (request_get_handlerK(s, path + "index.html", version, mp) < 0 &&
 			request_get_handler(s, path + "index.lua", version, mp) < 0)
 		{
 			// Display a list

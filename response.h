@@ -1,7 +1,7 @@
 #pragma once
-#include "GSock/gsock.h"
 #include <string>
 #include <map>
+#include "black_magic.h"
 
 class Response
 {
@@ -22,7 +22,7 @@ public:
 
 	std::string toString();
 
-	int send_with(sock& s);
+	void send_with(conn_data& conn);
 private:
 	std::string header;
 	std::map<std::string, std::string> mp;

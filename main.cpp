@@ -20,13 +20,25 @@
 #include "parser.h"
 using namespace std;
 
-bool isHttpHeader(const std::string& header_raw)
+bool isHttpHeaderEx(const std::string& header_raw, int& posEnd)
 {
-	if (header_raw.find("\r\n\r\n") != std::string::npos)
+	auto x = header_raw.find("\r\n\r\n");
+	if (x == std::string::npos)
 	{
+		posEnd = -1;
+		return false;
+	}
+	else
+	{
+		posEnd = x;
 		return true;
 	}
-	else return false;
+}
+
+bool isHttpHeader(const std::string& header_raw)
+{
+	int x;
+	return isHttpHeaderEx(header_raw, x);
 }
 
 int recvheader_raw(sock& s,std::string& header_raw)
@@ -55,50 +67,80 @@ int request_unknown_handler(sock& s, const string& path, const string& version, 
 	return 0;
 }
 
-int request_handler_main(sock& s,const std::string& header_raw)
+// Returns:
+// -1 Request is not ready. (This is an error)
+// 0 Request is handled successfully.
+// 1 Failed to handle GET request. (Error)
+// 2 Failed to handle POST request. (Error)
+// 3 POST request need more data. (Not Error)
+// 4 Unsupported http method. (Error)
+int request_handler_mainK(conn_data& conn)
 {
-	string method;
-	string path;
-	string version;
-	map<string, string> mp;
-	int ret = parse_header(header_raw, method, path, version, mp);
-	logd("RequestHandler sock(%p): Header Parse Finished.\n", &s);
-	if (ret < 0)
+	Request req = parse_header(conn.recv_data);
+	logd("RequestHandler sock(%p): Header Parse Finished. conn=%p\n", &conn);
+	if (!req.isReady())
 	{
-		return -2;
+		return -1;
 	}
 
-	logd("==========sock(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &s, method.c_str(), path.c_str(), version.c_str());
+	logd("==========conn(%p)=========\nMethod: %s\nPath: %s\nVersion: %s\n", &conn, req.method.c_str(), req.path.c_str(), req.http_version.c_str());
 	for (auto& pr : mp)
 	{
 		logx(4, "%s\t %s\n", pr.first.c_str(), pr.second.c_str());
 	}
-	logd("^^^^^^^^^^sock(%p)^^^^^^^^^^\n", &s);
-	logd("RequestHandler sock(%p): Finished Successfully.\n", &s);
+	logd("^^^^^^^^^^conn(%p)^^^^^^^^^^\n", &conn);
+	logd("RequestHandler conn(%p): Finished Successfully.\n", &conn);
 
-	if (method == "GET")
+	if (req.method == "GET")
 	{
-		if (request_get_handler(s, path, version, mp) < 0)
+		if (request_get_handlerK(conn,req) < 0)
 		{
 			return 1;
 		}
 	}
-	else if (method == "POST")
+	else if (req.method == "POST")
 	{
-		if (request_post_handler(s, path, version, mp) < 0)
+		int ret = request_post_handlerK(conn);
+		if (ret < 0)
 		{
 			return 2;
+		}
+		else if (ret > 0)
+		{
+			return 3;
 		}
 	}
 	else
 	{
-		if (request_unknown_handler(s, path, version, mp) < 0)
+		if (request_unknown_handlerK(conn) < 0)
 		{
 			return 3;
 		}
 	}
 
 	return 0;
+}
+
+// Handle request with given data
+// Returns:
+// 0 Header is parsed and request is handled. (data to sending back is already saved in conn.send_data)
+// 1 Header cannot be parsed and need more data.
+// NOTICE:
+// header_raw may contain more data if this is a POST request.
+int request_handler_headerK(conn_data& conn)
+{
+	int pos;
+	if (isHttpHeaderEx(conn.recv_data,pos))
+	{
+		request_handler_mainK(conn);
+	}
+}
+
+int request_handler_enter(sock& s, conn_data& data)
+{
+	// try to parse it
+	int ret = request_handler_headerK(data);
+	if (ret == 1) return 0;
 }
 
 int request_handler(sock& s)

@@ -141,7 +141,7 @@ static string GetCurrentDateString()
 	return buff;
 }
 
-int Response::send_with(sock & s)
+void Response::send_with(conn_data& conn)
 {
 	/// Server does not support keep-alive connection.
 	set_raw("Connection", "close");
@@ -163,5 +163,5 @@ int Response::send_with(sock & s)
 	logd("%s", ans.c_str());
 #endif
 
-	return sendn(s, t);
+	conn.send_data.append(t);
 }

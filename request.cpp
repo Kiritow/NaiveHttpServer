@@ -66,38 +66,6 @@ static int parse_header_rawline(const string& header_rawline, pair<string, strin
 	}
 }
 
-int parse_header(const string& header_raw, string& method, string& path, string& http_version, map<string, string>& outmap)
-{
-	vector<string> header_vec;
-	int ret = split_header_raw(header_raw, header_vec);
-	if (ret < 0)
-	{
-		return -1;
-	}
-
-	if (parse_header_firstline(header_vec[0], method, path, http_version) < 0)
-	{
-		return -2;
-	}
-
-	map<string, string> header_map;
-	int sz = header_vec.size();
-	for (int i = 1; i < sz; i++)
-	{
-		pair<string, string> pr;
-		if (parse_header_rawline(header_vec[i], pr) < 0)
-		{
-			return -3;
-		}
-		else
-		{
-			header_map.insert(pr);
-		}
-	}
-	outmap = move(header_map);
-	return 0;
-}
-
 int get_request_type(const string& path)
 {
 	string realpath = SERVER_ROOT + path;
@@ -131,4 +99,51 @@ int get_request_type(const string& path)
 			return 0;
 		}
 	}
+}
+
+Request::Request()
+{
+	request_type = -1;
+	_ready = false;
+}
+
+bool Request::isReady()
+{
+	return _ready;
+}
+
+Request parse_header(const string& header_raw)
+{
+	Request req;
+	vector<string> header_vec;
+
+	int ret = split_header_raw(header_raw, header_vec);
+	if (ret < 0)
+	{
+		return req;
+	}
+
+	if (parse_header_firstline(header_vec[0], req.method, req.path, req.http_version) < 0)
+	{
+		return req;
+	}
+
+	int sz = header_vec.size();
+	for (int i = 1; i < sz; i++)
+	{
+		pair<string, string> pr;
+		if (parse_header_rawline(header_vec[i], pr) < 0)
+		{
+			return req;
+		}
+		else
+		{
+			req.param.insert(pr);
+		}
+	}
+
+	req.request_type = get_request_type(req.path);
+
+	req._ready = true;
+	return req;
 }

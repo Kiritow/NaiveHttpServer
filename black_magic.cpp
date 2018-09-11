@@ -7,10 +7,12 @@ using namespace std;
 #ifdef WIN32
 int black_magic(serversock& t)
 {
-	return - 1;
+	return -1;
 }
 #else
 char exbuff[10240];
+
+
 int black_magic(serversock& t)
 {
 	if (t.setNonblocking() < 0)
@@ -22,9 +24,10 @@ int black_magic(serversock& t)
 	epoll ep(10240);
 	ep.add(t, EPOLLIN | EPOLLET | EPOLLERR);
 
-	map<vsock*, string> mp;
-
-	while (true)
+	map<vsock*, conn_data> mp;
+	sock* ps = new sock;
+	bool stop_server = false;
+	while (!stop_server)
 	{
 		int ret = ep.wait(-1);
 		if (ret <= 0)
@@ -32,7 +35,6 @@ int black_magic(serversock& t)
 			loge("epoll error with ret: %d. errno: %d\n", ret, errno);
 			break;
 		}
-		bool stop_server = false;
 		// Handle events
 		ep.handle([&](vsock& v, int event) {
 			logd("epoll handle: vsock %p event %d\n", &v, event);
@@ -45,17 +47,19 @@ int black_magic(serversock& t)
 					auto accres = t.accept_nb(*ps);
 					if (!accres.isFinished())
 					{
-						loge("Failed to finish accept.\n");
+						logd("Failed to finish accept.\n");
+						delete ps;
 					}
 					else if (!accres.isSuccess())
 					{
-						loge("Accept is failed.\n");
+						logd("Accept is failed.\n");
+						delete ps;
 					}
 					else
 					{
 						if (ps->setNonblocking() < 0)
 						{
-							loge("Failed to set client socket to non-blocking. %p\n", ps);
+							logd("Failed to set client socket to non-blocking. %p\n", ps);
 							delete ps;
 						}
 						else
@@ -63,7 +67,17 @@ int black_magic(serversock& t)
 							logd("New connection accepted. Adding %p to epoll.\n", ps);
 							if (ep.add(*ps, EPOLLIN | EPOLLET | EPOLLERR) < 0)
 							{
-								loge("Failed to adding to epoll. errno=%d\n", errno);
+								logd("Failed to adding to epoll. errno=%d\n", errno);
+								delete ps;
+							}
+							else
+							{
+								// else, the socket is now added to epoll. So we don't release it.
+								// prepare
+								mp[(vsock*)ps].send_done = 0;
+								mp[(vsock*)ps].binding = (void*)&ep;
+								mp[(vsock*)ps].onNewData = request_handler_enter;
+								mp[(vsock*)ps].onDataSent = response_handler_enter;
 							}
 						}
 					}
@@ -80,52 +94,96 @@ int black_magic(serversock& t)
 				if (event & EPOLLIN)
 				{
 					// Socket is readable. Read it
-					memset(exbuff, 0, 10240);
-					auto recres = s.recv_nb(exbuff, 10240);
-					recres.setStopAtEdge(true);
-					if (!recres.isFinished())
+					while (true)
 					{
-						loge("Failed to finish recv. Removing from epoll and releasing resource... %p\n", &s);
+						memset(exbuff, 0, 10240);
+						auto recres = s.recv_nb(exbuff, 10240);
+						recres.setStopAtEdge(true);
+						if (!recres.isFinished())
+						{
+							logd("Failed to finish recv. Removing from epoll and releasing resource... %p\n", &s);
+							mp.erase(&s);
+							ep.del(s);
+							delete &s;
+							break;
+						}
+						else if (!recres.isSuccess())
+						{
+							if (recres.getErrCode() == gerrno::WouldBlock)
+							{
+								// No more data yet
+								mp[&v].recv_data.append(string(exbuff, recres.getBytesDone()));
+								if (mp[&v].onNewData((sock&)v, mp[&v]))
+								{
+									logd("onNewData callback requires resource release. %p\n", &s);
+									mp.erase(&v);
+									ep.del(v);
+									delete &s;
+									break;
+								}
+							}
+							else
+							{
+								// Recv call error.
+								logd("Recv is Failed. Removing from epoll and releasing resource... %p\n", &s);
+								mp.erase(&s);
+								ep.del(s);
+								delete &s;
+								break;
+							}
+						}
+						else
+						{
+							// Finished, Success
+							// Store the data and loop again to read more. (until it reaches WouldBlock)
+							// exbuff will be cleared at the beginning of the loop.
+							mp[&s].recv_data.append(string(exbuff, recres.getBytesDone()));
+						}
+					}
+				}
+				else if (event& EPOLLOUT)
+				{
+					// Socket is writable (This is mostly cause by callbacks which set the EPOLLOUT)
+					auto sndres = s.send_nb(mp[&v].send_data.data() + mp[&v].send_done, mp[&v].send_data.size() - mp[&v].send_done);
+					sndres.setStopAtEdge(true);
+					if (!sndres.isFinished())
+					{
+						logd("Failed to finish send. Removing from epoll and releasing resource... %p\n", &v);
 						mp.erase(&s);
-						ep.del(s, EPOLLIN | EPOLLET | EPOLLERR);
+						ep.del(s);
 						delete &s;
 					}
-					else if (!recres.isSuccess())
+					else if (!sndres.isSuccess())
 					{
-						if (recres.getErrCode() == gerrno::WouldBlock)
+						if (sndres.getErrCode() == gerrno::WouldBlock)
 						{
-							// No more data yet
-							mp[&s].append(string(exbuff, recres.getBytesDone()));
-							if (isHttpHeader(mp[&s]))
+							// Can't send more data yet.
+							mp[&v].send_done += sndres.getBytesDone();
+							if (mp[&v].onDataSent((sock&)v, mp[&v]) < 0)
 							{
-								// This is http header.
-								int hret=request_handler_main(s, mp[&s]);
-								logd("HTTP handle finished, ret=%d. removing from epoll and releasing resource... %p\n", hret, &s);
+								logd("onDataSent callback requires resource release. %p\n", &s);
 								mp.erase(&s);
-								ep.del(s, EPOLLIN | EPOLLET | EPOLLERR);
+								ep.del(s);
 								delete &s;
 							}
 						}
 						else
 						{
-							loge("Recv is Failed. Removing from epoll and releasing resource... %p\n", &s);
+							// Send call error
+							logd("Send is Failed. Removing from epoll and releasing resource... %p\n", &s);
 							mp.erase(&s);
-							ep.del(s, EPOLLIN | EPOLLET | EPOLLERR);
+							ep.del(s);
 							delete &s;
 						}
 					}
 					else
 					{
-						// Here is a little bug, if request header is more than 10240 and mode is ET, then we will infinitely hang up here.
-						// Finished, Success
-						mp[&s].append(string(exbuff, recres.getBytesDone()));
-						if (isHttpHeader(mp[&s]))
+						mp[&v].send_done += sndres.getBytesDone();
+						if (mp[&v].onDataSent((sock&)v, mp[&v]) < 0)
 						{
-							// This is http header.
-							request_handler_main(s, mp[&s]);
-							logd("HTTP handle finished. removing from epoll and releasing resource... %p\n", &s);
-							ep.del(s, EPOLLIN | EPOLLET | EPOLLERR);
+							logd("onDataSent callback requires resource release. %p\n", &s);
 							mp.erase(&s);
+							ep.del(s);
 							delete &s;
 						}
 					}
@@ -135,7 +193,8 @@ int black_magic(serversock& t)
 					// Socket is error.
 					loge("Socket is error. Removing from epoll and releasing resource... %p\n", &s);
 					mp.erase(&s);
-					ep.del(s, EPOLLIN | EPOLLET | EPOLLERR);
+					ep.del(s);
+					delete &s;
 				}
 			}
 		});
