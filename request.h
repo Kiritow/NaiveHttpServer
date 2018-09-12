@@ -2,10 +2,15 @@
 #include <string>
 #include <map>
 
-int parse_header(const std::string& header_raw,
-	std::string& method,
-	std::string& path,
-	std::string& http_version,
-	std::map<std::string, std::string>& outmap);
+class Request
+{
+public:
+	std::string method;
+	std::string path;
+	std::string http_version;
+	std::map<std::string, std::string> header;
+	// data contains data after http header. (work with POST requests)
+	std::string data;
+};
 
-int get_request_type(const std::string& path);
+int parse_header(const std::string& header_raw, Request& req);

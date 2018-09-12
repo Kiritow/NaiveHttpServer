@@ -85,22 +85,6 @@ void Response::setContent(const string & content, const string & content_type)
 	setContentType(content_type);
 }
 
-string Response::toString()
-{
-	string ans;
-	ans.append(header);
-	for (auto& pr : mp)
-	{
-		ans.append(pr.first + ": " + pr.second + "\r\n");
-	}
-	ans.append("\r\n");
-	if (!data.empty())
-	{
-		ans.append(data);
-	}
-	return ans;
-}
-
 // Use struct tm::tm_wday for weekday value.
 static const char* GetWeekAbbr(int weekday)
 {
@@ -124,7 +108,7 @@ static const char* GetMonthAbbr(int month)
 	else return m[month - 1];
 }
 
-// Fri, 09 Mar 2018 07:06:13 GMT
+// Standard format: Fri, 09 Mar 2018 07:06:13 GMT
 static string GetCurrentDateString()
 {
 	time_t t;
@@ -141,17 +125,13 @@ static string GetCurrentDateString()
 	return buff;
 }
 
-int Response::send_with(sock & s)
+string Response::toString()
 {
 	/// Server does not support keep-alive connection.
 	set_raw("Connection", "close");
 	set_raw("Server", "NaiveHTTPServer by Kiritow");
 	set_raw("Date", GetCurrentDateString());
 
-	string t = toString();
-
-#if CONFIG_LOG_LEVEL>3
-	// Only print header here.
 	string ans;
 	ans.append(header);
 	for (auto& pr : mp)
@@ -159,9 +139,9 @@ int Response::send_with(sock & s)
 		ans.append(pr.first + ": " + pr.second + "\r\n");
 	}
 	ans.append("\r\n");
-
-	logd("%s", ans.c_str());
-#endif
-
-	return sendn(s, t);
+	if (!data.empty())
+	{
+		ans.append(data);
+	}
+	return ans;
 }

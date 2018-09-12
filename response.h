@@ -1,7 +1,7 @@
 #pragma once
-#include "GSock/gsock.h"
 #include <string>
 #include <map>
+#include "NetworkProvider.h"
 
 class Response
 {
@@ -21,8 +21,6 @@ public:
 	void setContentRaw(const std::string& content);
 
 	std::string toString();
-
-	int send_with(sock& s);
 private:
 	std::string header;
 	std::map<std::string, std::string> mp;

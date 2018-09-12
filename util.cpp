@@ -1,47 +1,15 @@
 #include "util.h"
 #include "log.h"
+#include "config.h"
+#include "GSock/gsock_helper.h"
+#include <cstring>
 using namespace std;
 
-int sendn(sock& s, const std::string& in_data)
-{
-	int done = 0;
-	int total = in_data.size();
-	while (done < total)
-	{
-		int ret = s.send(in_data.c_str() + done, total - done);
-		if (ret <= 0)
-		{
-			return ret;
-		}
-		else
-		{
-			done += ret;
-		}
-	}
-	return done;
-}
-
-int recvline(sock& s, std::string& out)
-{
-	std::string ans;
-	char buff[16];
-	while (true)
-	{
-		buff[0] = buff[1] = 0;
-		int ret = s.recv(buff, 1);
-		if (ret<0) return ret;
-		else if (ret == 0)
-			return -2; /// If connection is closed... (BUG)
-		ans.push_back(buff[0]);
-		if (ans.find("\r\n") != std::string::npos)
-		{
-			break;
-		}
-	}
-	out = ans;
-
-	return ans.size();
-}
+#ifdef _WIN32
+#include <io.h> // access
+#else
+#include <unistd.h>
+#endif
 
 bool endwith(const string& str, const string& target)
 {
@@ -200,4 +168,208 @@ int urldecode(const string& url_before, string& out_url_decoded, map<string, str
 int mymin(int a, int b)
 {
 	return a < b ? a : b;
+}
+
+int GetFileContent(const string& request_path, string& out_content)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	char buff[1024];
+	string content;
+	while (true)
+	{
+		memset(buff, 0, 1024);
+		int ret = fread(buff, 1, 1024, fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		content.append(string(buff, ret));
+	}
+	fclose(fp);
+	out_content = content;
+	return 0;
+}
+
+int GetFileContentEx(const string& request_path, int beginat, int length, string& out_content)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	fseek(fp, beginat, SEEK_SET);
+	char buff[1024];
+	string content;
+	int done = 0;
+	int total = length;
+	while (done < total)
+	{
+		memset(buff, 0, 1024);
+		int ret = fread(buff, 1, mymin(1024, total - done), fp);
+		if (ret <= 0)
+		{
+			break;
+		}
+		content.append(string(buff, ret));
+		done += ret;
+	}
+	fclose(fp);
+	out_content = content;
+	return 0;
+}
+
+int GetFileLength(const string& request_path, int& out_length)
+{
+	string realpath = SERVER_ROOT + request_path;
+	FILE* fp = fopen(realpath.c_str(), "rb");
+	if (fp == NULL) return -1;
+	fseek(fp, 0L, SEEK_END);
+	out_length = ftell(fp);
+	fclose(fp);
+	return 0;
+}
+
+#define ct(abbr,target) else if(endwith(path,abbr)) out_content_type=target
+
+int GetFileContentType(const string& path, string& out_content_type)
+{
+	if (endwith(path, ".html"))
+	{
+		out_content_type = "text/html";
+	}
+	ct(".bmp", "application/x-bmp");
+	ct(".doc", "application/msword");
+	ct(".ico", "image/x-icon");
+	ct(".java", "java/*");
+	ct(".class", "java/*");
+	ct(".jpeg", "image/jpeg");
+	ct(".jpg", "image/jpeg");
+	ct(".png", "image/png");
+	ct(".swf", "application/x-shockwave-flash");
+	ct(".xhtml", "text/html");
+	ct(".apk", "application/vnd.android.package-archive");
+	ct(".exe", "application/x-msdownload");
+	ct(".htm", "text/html");
+	ct(".js", "application/x-javascript");
+	ct(".mp3", "audio/mp3");
+	ct(".mp4", "video/mpeg4");
+	ct(".mpg", "video/mpg");
+	ct(".pdf", "application/pdf");
+	ct(".rmvb", "application/vnd.rn-realmedia-vbr");
+	ct(".torrent", "application/x-bittorrent");
+	ct(".txt", "text/plain");
+	else
+	{
+		/// Not Support Content Type
+		return -1;
+	}
+
+	/// Supported ContentType
+	return 0;
+}
+
+#undef ct
+
+int get_request_path_type(const string& path)
+{
+	string realpath = SERVER_ROOT + path;
+	if (access(realpath.c_str(), 0) < 0) // File not exist
+	{
+		// File not exist, maybe dynamic request?
+		// Only Lua extension is planned to support, which means *.php will be treated as a static file.
+		realpath = realpath + ".lua";
+		if (access(realpath.c_str(), 0) < 0)
+		{
+			// Not a valid request.
+			return -1;
+		}
+		else
+		{
+			/// Dynamic Request
+			return 1;
+		}
+	}
+	else // File exists.
+	{
+		if (endwith(path,".lua")) // XXX.lua
+		{
+			// Dynamic Request
+			return 1;
+		}
+		else
+		{
+			// Static Request
+			// Notice: Binary file should be dynamic request (like CGI), but here just deal it as static file.
+			return 0;
+		}
+	}
+}
+
+int parse_range_request(const string& range, int content_length, int& _out_beginat, int& _out_length)
+{
+	const char* s = range.c_str();
+	const char* t = s + range.size();
+	const char* p = strstr(s, "bytes=");
+	if (p == NULL)
+	{
+		return -1;
+	}
+	// bytes=...
+	p = p + 6;
+	const char* q = strstr(p, "-");
+	if (q == NULL)
+	{
+		return -2;
+	}
+
+	int beginat;
+	if (q - p > 0)
+	{
+		// bytes=A-...
+		sscanf(p, "%d", &beginat);
+	}
+	else
+	{
+		// bytes=-...
+		beginat = -1;
+	}
+
+	q++;
+	int endat;
+	if (t - q > 0)
+	{
+		// bytes=?-B
+		sscanf(q, "%d", &endat);
+	}
+	else
+	{
+		// bytes=?-
+		endat = -1;
+	}
+
+	if (beginat < 0 && endat < 0)
+	{
+		return -3;
+	}
+
+	if (beginat < 0)
+	{
+		// bytes=-B
+		_out_length = endat;
+		_out_beginat = content_length - _out_length;
+	}
+	else if (endat < 0)
+	{
+		// bytes=A-
+		_out_beginat = beginat;
+		_out_length = content_length - beginat;
+	}
+	else
+	{
+		// bytes=A-B
+		_out_beginat = beginat;
+		_out_length = mymin(content_length - beginat, endat - beginat + 1);
+	}
+
+	return 0;
 }
