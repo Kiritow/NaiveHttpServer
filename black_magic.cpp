@@ -60,40 +60,55 @@ int black_magic(serversock& t)
 			{
 				if (event & EPOLLIN)
 				{
-					// ServerSocket is readable. We can call accept() on it.
-					sock* ps = new sock;
-					auto accres = t.accept_nb(*ps);
-					if (!accres.isFinished())
+					// ServerSocket is readable. We can call accept() on it until it returns WouldBlock
+					while (true)
 					{
-						logd("Failed to finish accept.\n");
-						delete ps;
-					}
-					else if (!accres.isSuccess())
-					{
-						logd("Accept is failed.\n");
-						delete ps;
-					}
-					else
-					{
-						if (ps->setNonblocking() < 0)
+						sock* ps = new sock;
+						auto accres = t.accept_nb(*ps);
+						accres.stopAtEdge(true);
+						if (!accres.isFinished())
 						{
-							logd("Failed to set client socket to non-blocking. %p\n", ps);
+							logd("Failed to finish accept.\n");
 							delete ps;
+						}
+						else if (!accres.isSuccess())
+						{
+							if (accres.getErrCode() == gerrno::WouldBlock)
+							{
+								logd("No more connection to accept.\n");
+								delete ps;
+								break;
+							}
+							else
+							{
+								logd("Accept call error. stopping server...\n");
+								delete ps;
+								stop_server = true;
+								break;
+							}
 						}
 						else
 						{
-							logd("New connection accepted. Adding %p to epoll.\n", ps);
-							if (ep.add(*ps, EPOLLIN | EPOLLET | EPOLLERR) < 0)
+							if (ps->setNonblocking() < 0)
 							{
-								logd("Failed to adding to epoll. errno=%d\n", errno);
+								logd("Failed to set client socket to non-blocking. %p\n", ps);
 								delete ps;
 							}
 							else
 							{
-								// else, the socket is now added to epoll. So we don't release it.
-								// Initialize vairables
-								mp[(vsock*)ps].sent = 0;
-								mp[(vsock*)ps].status = 0;
+								logd("New connection accepted. Adding %p to epoll.\n", ps);
+								if (ep.add(*ps, EPOLLIN | EPOLLET | EPOLLERR) < 0)
+								{
+									logd("Failed to adding to epoll. errno=%d\n", errno);
+									delete ps;
+								}
+								else
+								{
+									// else, the socket is now added to epoll. So we don't release it.
+									// Initialize vairables
+									mp[(vsock*)ps].sent = 0;
+									mp[(vsock*)ps].status = 0;
+								}
 							}
 						}
 					}
