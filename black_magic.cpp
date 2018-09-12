@@ -148,7 +148,7 @@ int black_magic(serversock& t)
 								// No more data yet
 								thispack.recv_data.append(string(exbuff, recres.getBytesDone()));
 
-								if (thispack.status == 0)
+								if (thispack.status == 0) // 0->1, 0->5
 								{
 									// Check if it contains http request header
 									if (string::npos != (thispack.header_endpos = thispack.recv_data.find("\r\n\r\n")))
@@ -167,7 +167,7 @@ int black_magic(serversock& t)
 									}
 								}
 
-								if (thispack.status == 2)
+								if (thispack.status == 2) // 2->break, 2->3
 								{
 									// check if we have done receiving post data.
 									if (thispack.post_total <= thispack.req.data.size())
@@ -175,9 +175,10 @@ int black_magic(serversock& t)
 										thispack.status = 3;
 										logd("http post data received. status switched to 3.\n");
 									}
+									break;
 								}
 
-								if (thispack.status == 1)
+								if (thispack.status == 1) // 1->2->break, 1->5, 1->3
 								{
 									// Check if it needs more data
 									if (thispack.req.method == "POST")
@@ -195,7 +196,9 @@ int black_magic(serversock& t)
 											}
 											thispack.recv_data.clear();
 											thispack.post_total = content_length;
+											thispack.status = 2;
 											logd("more post data is need. Switch status to 2.\n");
+											break;
 										}
 										else
 										{
@@ -210,7 +213,7 @@ int black_magic(serversock& t)
 									}
 								}
 
-								if (thispack.status == 3)
+								if (thispack.status == 3) // 3->4->break, 3->4->5
 								{
 									Response res;
 									int ret = request_handler(thispack.req, res);
@@ -240,8 +243,11 @@ int black_magic(serversock& t)
 											// If we meet WouldBlock, add EPOLLOUT on it.
 											// Then we keep status at 4.
 											// We will meet again in EPOLLOUT brench when this socket is writable again.
-											ep.mod(v, EPOLLOUT);
+											// It is said epoll_ctl_add is faster than epoll_ctl_mod, but epoll.add() does not work here.
+											ep.mod(v, EPOLLOUT | EPOLLET | EPOLLERR);
 											thispack.sent = sendres.getBytesDone();
+											logd("Can't send all now. Keep status at 4. Adding EPOLLOUT on vsock=%p\n", &v);
+											break;
 										}
 										else
 										{
@@ -256,7 +262,7 @@ int black_magic(serversock& t)
 									}
 								}
 
-								if (thispack.status == 5)
+								if (thispack.status == 5) // 5->break
 								{
 									logd("vpack with status 5. Removing it from epoll and releasing resouce...\n");
 									// After this line, thispack is invalid an should never be used again.
