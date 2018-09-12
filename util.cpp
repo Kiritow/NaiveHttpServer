@@ -258,6 +258,7 @@ int GetFileContentType(const string& path, string& out_content_type)
 	ct(".rmvb", "application/vnd.rn-realmedia-vbr");
 	ct(".torrent", "application/x-bittorrent");
 	ct(".txt", "text/plain");
+	ct(".css", "text/css");
 	else
 	{
 		/// Not Support Content Type
